@@ -196,7 +196,7 @@ CAROUSEL_FONTS = {
     "slide_num_size": 18,
 }
 
-CAROUSEL_YOUR_HANDLE = "@yourhandle"   # update this in production
+CAROUSEL_YOUR_HANDLE = "@Hassan Rehman"   # update this in production
 
 # Font download URLs (for README / setup script)
 FONT_DOWNLOAD_URLS = {

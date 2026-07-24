@@ -11,6 +11,7 @@ from datetime import datetime
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 import pytz
+from aiohttp import web
 
 from config.settings import TIMEZONE, POST_TIME, SKIP_AFTER_MINUTES, RUN_NOW
 from utils.logger import get_logger, log_error, log_skip
@@ -186,6 +187,23 @@ def build_scheduler() -> AsyncIOScheduler:
 
 
 # ─────────────────────────────────────────────────────────────────
+# DUMMY WEB SERVER (For Render Free Tier)
+# ─────────────────────────────────────────────────────────────────
+
+async def health_check(request):
+    return web.Response(text="OK")
+
+async def start_web_server():
+    port = int(os.environ.get("PORT", 8080))
+    app = web.Application()
+    app.add_routes([web.get('/', health_check)])
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, '0.0.0.0', port)
+    await site.start()
+    log.info(f"Dummy web server started on port {port}")
+
+# ─────────────────────────────────────────────────────────────────
 # ENTRYPOINT
 # ─────────────────────────────────────────────────────────────────
 
@@ -200,6 +218,9 @@ async def run():
     scheduler.start()
 
     log.info(f"Scheduler started — daily pipeline at {POST_TIME} {TIMEZONE}")
+
+    # Start dummy web server for Render Free Tier
+    await start_web_server()
 
     # If RUN_NOW env var is set — run pipeline immediately (for testing)
     if RUN_NOW:
