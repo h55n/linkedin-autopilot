@@ -1,0 +1,34 @@
+services:
+  - type: worker
+    name: linkedin-autopilot
+    runtime: python
+    plan: free
+    buildCommand: |
+      pip install -r requirements.txt
+      python scripts/setup_fonts.py
+    startCommand: python main.py
+    envVars:
+      - key: GROQ_API_KEY
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
+      - key: LINKEDIN_ACCESS_TOKEN
+        sync: false
+      - key: LINKEDIN_PERSON_URN
+        sync: false
+      - key: REDDIT_CLIENT_ID
+        sync: false
+      - key: REDDIT_CLIENT_SECRET
+        sync: false
+      - key: REDDIT_USER_AGENT
+        value: linkedin-autopilot/1.0
+      - key: POST_TIME
+        value: "07:00"
+      - key: RUN_NOW
+        value: "false"
+    disk:
+      name: data
+      mountPath: /opt/render/project/src
+      sizeGB: 1
