@@ -10,6 +10,11 @@ Usage:
 import os
 import sys
 import json
+import codecs
+
+if sys.stdout.encoding != 'utf-8':
+    sys.stdout.reconfigure(encoding='utf-8')
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from dotenv import load_dotenv
@@ -21,13 +26,13 @@ from generator.generator import generate_morning_brief
 
 
 def main():
-    print("\n─────────────────────────────────────────")
-    print("LinkedIn Autopilot — Pipeline Dry Run")
-    print("─────────────────────────────────────────\n")
+    print("\n-----------------------------------------")
+    print("LinkedIn Autopilot - Pipeline Dry Run")
+    print("-----------------------------------------\n")
 
     print("Step 1: Scraping...")
     stories = scrape_all()
-    print(f"  → {len(stories)} unique stories found\n")
+    print(f"  -> {len(stories)} unique stories found\n")
 
     if not stories:
         print("No stories found. Check internet connection and logs.")
@@ -35,7 +40,7 @@ def main():
 
     print("Step 2: Scoring and ranking...")
     picks = rank_and_pick(stories)
-    print(f"  → Top {len(picks)} picks:\n")
+    print(f"  -> Top {len(picks)} picks:\n")
 
     for i, story in enumerate(picks, 1):
         print(f"  {i}. [{story.get('source', '?')}] {story['title'][:70]}")
@@ -50,7 +55,7 @@ def main():
     print(brief)
     print("="*50)
 
-    print(f"\n✓ Dry run complete. {len(stories)} stories → {len(picks)} picks.")
+    print(f"\n+ Dry run complete. {len(stories)} stories -> {len(picks)} picks.")
     print("Run main.py to start the full pipeline with Telegram and LinkedIn.\n")
 
 

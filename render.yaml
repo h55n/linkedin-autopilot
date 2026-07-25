@@ -6,6 +6,7 @@ services:
     buildCommand: |
       pip install -r requirements.txt
       python scripts/setup_fonts.py
+      python -m playwright install chromium --with-deps
     startCommand: python main.py
     envVars:
       - key: GROQ_API_KEY
@@ -17,6 +18,10 @@ services:
       - key: LINKEDIN_ACCESS_TOKEN
         sync: false
       - key: LINKEDIN_PERSON_URN
+        sync: false
+      - key: MISTRAL_API_KEY
+        sync: false
+      - key: NVIDIA_NIM_API_KEY
         sync: false
       - key: REDDIT_CLIENT_ID
         sync: false

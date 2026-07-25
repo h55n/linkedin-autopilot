@@ -25,6 +25,7 @@ from telegram_bot.voice_handler import transcribe_voice
 from generator.generator import generate_post, generate_post_with_edit
 from linkedin.poster import post_text_to_linkedin, post_carousel_to_linkedin
 from carousel.carousel_gen import generate_carousel_pdf
+from telegram_bot.screenshotter import take_screenshots_for_story
 from config.settings import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
 
 log = get_logger("telegram_bot")
@@ -248,10 +249,27 @@ async def _generate_and_send_draft(msg, story: dict, format_type: str, angle: st
     )
     await msg.reply_text(draft_msg)
 
-    # If image format — give screenshot instruction
+    # If image format — take screenshots automatically and send them
     if actual_format == "image":
-        instruction = f"screenshot of {story.get('url', 'the tool')}"
-        await msg.reply_text(IMAGE_INSTRUCTION.format(screenshot_instruction=instruction))
+        await msg.reply_text("taking screenshots of the url...")
+        try:
+            screenshot_paths = await take_screenshots_for_story(story)
+            if screenshot_paths:
+                bot = Bot(token=TELEGRAM_BOT_TOKEN)
+                for path in screenshot_paths:
+                    with open(path, "rb") as f:
+                        await bot.send_photo(
+                            chat_id=msg.chat.id,
+                            photo=f,
+                            caption="screenshot captured automatically — attach this when posting on linkedin.",
+                        )
+            else:
+                instruction = f"screenshot of {story.get('url', 'the tool')}"
+                await msg.reply_text(IMAGE_INSTRUCTION.format(screenshot_instruction=instruction))
+        except Exception as e:
+            log.warning(f"Auto-screenshot failed: {e}")
+            instruction = f"screenshot of {story.get('url', 'the tool')}"
+            await msg.reply_text(IMAGE_INSTRUCTION.format(screenshot_instruction=instruction))
 
 
 async def _regenerate_with_edit(msg, story: dict, format_type: str,

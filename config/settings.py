@@ -14,8 +14,10 @@ load_dotenv()
 # ─────────────────────────────────────────────────────────────────
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY", "")
+NVIDIA_NIM_API_KEY = os.getenv("NVIDIA_NIM_API_KEY", "")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
-TELEGRAM_CHAT_ID = int(os.getenv("TELEGRAM_CHAT_ID", "0"))
+TELEGRAM_CHAT_ID = int(os.getenv("TELEGRAM_CHAT_ID") or "0")
 LINKEDIN_ACCESS_TOKEN = os.getenv("LINKEDIN_ACCESS_TOKEN", "")
 LINKEDIN_PERSON_URN = os.getenv("LINKEDIN_PERSON_URN", "")
 REDDIT_CLIENT_ID = os.getenv("REDDIT_CLIENT_ID", "")
@@ -37,6 +39,8 @@ SKIP_AFTER_MINUTES = 120       # skip day 2h after brief
 # ─────────────────────────────────────────────────────────────────
 
 GROQ_MODEL = "llama-3.3-70b-versatile"
+MISTRAL_MODEL = "mistral-large-latest"
+NVIDIA_NIM_MODEL = "meta/llama-3.1-70b-instruct"
 GROQ_TEMPERATURE = 0.72
 GROQ_MAX_TOKENS_TEXT = 600
 GROQ_MAX_TOKENS_CAROUSEL = 900
@@ -184,25 +188,25 @@ CAROUSEL_COLORS = {
 }
 
 CAROUSEL_FONTS = {
-    "headline_path":  "carousel/assets/fonts/PlayfairDisplay-Bold.ttf",
+    "headline_path":  "carousel/assets/fonts/Caprasimo-Regular.ttf",
     "body_path":      "carousel/assets/fonts/Inter-Regular.ttf",
     "semibold_path":  "carousel/assets/fonts/Inter-SemiBold.ttf",
-    "headline_size":  80,
-    "headline_size_content": 60,
-    "subheadline_size": 32,
+    "headline_size":  72,
+    "headline_size_content": 52,
+    "subheadline_size": 30,
     "body_size":      30,
-    "label_size":     22,
+    "label_size":     18,
     "footer_size":    16,
     "slide_num_size": 18,
 }
 
-CAROUSEL_YOUR_HANDLE = "@Hassan Rehman"   # update this in production
+# (Handle is intentionally omitted from slides)
 
 # Font download URLs (for README / setup script)
 FONT_DOWNLOAD_URLS = {
     "Inter-Regular.ttf": "https://fonts.gstatic.com/s/inter/v13/UcCO3FwrK3iLTeHuS_fvQtMwCp50KnMw2boKoduKmMEVuLyfAZ9hiJ-Ek-_EeA.woff2",
     "Inter-SemiBold.ttf": "https://fonts.gstatic.com/s/inter/v13/UcCO3FwrK3iLTeHuS_fvQtMwCp50KnMw2boKoduKmMEVuI6fAZ9hiJ-Ek-_EeA.woff2",
-    "PlayfairDisplay-Bold.ttf": "https://fonts.gstatic.com/s/playfairdisplay/v37/nuFkD-vYSZviVYUb_rj3ij__anPXBYf9lW4e-DO4.woff2",
+    "Caprasimo-Regular.ttf": "https://github.com/google/fonts/raw/main/ofl/caprasimo/Caprasimo-Regular.ttf",
 }
 
 # ─────────────────────────────────────────────────────────────────
@@ -255,22 +259,22 @@ WRITING RULES — ABSOLUTE. NEVER BREAK THESE.
 FORMAT RULES BY POST TYPE
 
 plain text post:
-- 2 to 3 sentences. hard limit.
-- sentence 1: the fact or the thing that happened (hook)
-- sentence 2: why it matters or what changed
-- sentence 3: your opinion, a tool link, or a question to make them think
-- if it is a tool launch: include the url naturally in sentence 3
+- 2 to 4 very short paragraphs/sentences.
+- CRITICAL: Separate each sentence/paragraph with an empty line (double newline).
+- paragraph 1: the fact or the thing that happened (hook)
+- paragraph 2: why it matters or what changed
+- paragraph 3: your opinion or a question to make them think
+- paragraph 4: attach the link properly on its own line at the very end.
 
 carousel intro text (the text that appears with the carousel on linkedin):
 - 1 sentence only. this is the hook that makes them swipe.
 - it should create a gap: something they want to know more about.
 
 carousel slides:
-- slide 1: the most surprising or counterintuitive fact. large, bold.
-- slides 2-3: the substance. what happened, what changed, what it means.
-- slide 4-5 (optional): practical takeaway, your opinion, or what to do next.
-- each slide: heading (5 words max) + body (40 words max)
-- all lowercase except acronyms (GPT, API, etc.)
+- cover slide: heading in Title Case (5 words max), subheading in Sentence case (10 words max).
+- content slides: heading in Sentence case (5 words max), body in short Sentence case paragraphs.
+- each slide body: max 40 words, separated by double newlines (\n\n) for paragraph breathing room.
+- no handles, no hashtags, no em dashes.
 
 image pair caption:
 - 1 to 2 sentences.

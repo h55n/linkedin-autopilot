@@ -231,6 +231,7 @@ async def run():
     async with app:
         await app.initialize()
         await app.start()
+        await app.updater.start_polling()
         log.info("Telegram bot polling started")
 
         # Keep alive

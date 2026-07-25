@@ -33,3 +33,10 @@ pytest-asyncio==0.23.7
 # Utilities
 pytz==2024.1
 python-dateutil==2.9.0.post0
+pilmoji
+
+# Article enrichment (full text extraction)
+trafilatura>=1.9.0
+
+# Automated screenshots for image posts
+playwright>=1.44.0

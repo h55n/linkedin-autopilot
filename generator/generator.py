@@ -6,6 +6,7 @@ Handles text posts, carousel JSON, image captions, and morning brief formatting.
 
 import json
 import re
+import httpx
 from groq import Groq
 from utils.logger import get_logger, log_error
 from utils.helpers import age_label, format_source_label, format_score_label, emoji_for_story
@@ -18,7 +19,10 @@ from generator.prompts import (
 from config.settings import (
     GROQ_API_KEY, GROQ_MODEL, GROQ_TEMPERATURE,
     GROQ_MAX_TOKENS_TEXT, GROQ_MAX_TOKENS_CAROUSEL,
+    MISTRAL_API_KEY, MISTRAL_MODEL,
+    NVIDIA_NIM_API_KEY, NVIDIA_NIM_MODEL,
 )
+from scraper.enricher import enrich_story
 
 log = get_logger("generator")
 client = Groq(api_key=GROQ_API_KEY)
@@ -47,6 +51,10 @@ def generate_post(story: dict, post_type: str = "text", angle: str = None) -> di
     """
     log.info(f"Generating {post_type} post for: {story['title'][:60]}")
 
+    # Fetch full article text if not already present
+    if not story.get("full_text"):
+        enrich_story(story)
+
     if post_type == "carousel":
         return _generate_carousel(story, angle)
     elif post_type == "image":
@@ -63,7 +71,7 @@ def generate_post_with_edit(
 ) -> dict:
     """Regenerate a post applying an edit instruction."""
     prompt = build_edit_prompt(original_post, edit_instruction, story, post_type)
-    text = _call_groq(prompt, max_tokens=GROQ_MAX_TOKENS_TEXT)
+    text = _call_llm(prompt, max_tokens=GROQ_MAX_TOKENS_TEXT)
     return {
         "post_type": post_type,
         "post_text": _clean_text_post(text),
@@ -120,7 +128,7 @@ def generate_morning_brief(picks: list[dict]) -> str:
 
 def _generate_text_post(story: dict, angle: str = None) -> dict:
     prompt = build_text_post_prompt(story, angle)
-    text = _call_groq(prompt, max_tokens=GROQ_MAX_TOKENS_TEXT)
+    text = _call_llm(prompt, max_tokens=GROQ_MAX_TOKENS_TEXT)
     return {
         "post_type": "text",
         "post_text": _clean_text_post(text),
@@ -131,7 +139,7 @@ def _generate_text_post(story: dict, angle: str = None) -> dict:
 
 def _generate_image_caption(story: dict, angle: str = None) -> dict:
     prompt = build_image_caption_prompt(story, angle)
-    text = _call_groq(prompt, max_tokens=GROQ_MAX_TOKENS_TEXT)
+    text = _call_llm(prompt, max_tokens=GROQ_MAX_TOKENS_TEXT)
     return {
         "post_type": "image",
         "post_text": _clean_text_post(text),
@@ -142,13 +150,13 @@ def _generate_image_caption(story: dict, angle: str = None) -> dict:
 
 def _generate_carousel(story: dict, angle: str = None) -> dict:
     prompt = build_carousel_prompt(story, angle)
-    raw = _call_groq(prompt, max_tokens=GROQ_MAX_TOKENS_CAROUSEL)
+    raw = _call_llm(prompt, max_tokens=GROQ_MAX_TOKENS_CAROUSEL)
 
     carousel_data = _parse_carousel_json(raw)
 
     if carousel_data is None:
         log.warning("Carousel JSON parse failed — retrying once")
-        raw2 = _call_groq(prompt, max_tokens=GROQ_MAX_TOKENS_CAROUSEL)
+        raw2 = _call_llm(prompt, max_tokens=GROQ_MAX_TOKENS_CAROUSEL)
         carousel_data = _parse_carousel_json(raw2)
 
     if carousel_data is None:
@@ -174,6 +182,30 @@ def _generate_carousel(story: dict, angle: str = None) -> dict:
 # GROQ API CALL
 # ─────────────────────────────────────────────────────────────────
 
+def _call_mistral(prompt: str, max_tokens: int = 600) -> str:
+    """Call Mistral LLM and return the text response."""
+    if not MISTRAL_API_KEY:
+        raise ValueError("Mistral API key not configured")
+        
+    try:
+        response = httpx.post(
+            "https://api.mistral.ai/v1/chat/completions",
+            headers={"Authorization": f"Bearer {MISTRAL_API_KEY}"},
+            json={
+                "model": MISTRAL_MODEL,
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": GROQ_TEMPERATURE,
+                "max_tokens": max_tokens,
+            },
+            timeout=30.0
+        )
+        response.raise_for_status()
+        return response.json()["choices"][0]["message"]["content"].strip()
+    except Exception as e:
+        log_error("Mistral API call failed", e)
+        raise
+
+
 def _call_groq(prompt: str, max_tokens: int = 600) -> str:
     """Call Groq LLM and return the text response."""
     try:
@@ -187,6 +219,43 @@ def _call_groq(prompt: str, max_tokens: int = 600) -> str:
     except Exception as e:
         log_error("Groq API call failed", e)
         raise
+
+
+def _call_nvidia(prompt: str, max_tokens: int = 600) -> str:
+    """Call Nvidia NIM LLM and return the text response."""
+    if not NVIDIA_NIM_API_KEY:
+        raise ValueError("NVIDIA NIM API key not configured")
+        
+    try:
+        response = httpx.post(
+            "https://integrate.api.nvidia.com/v1/chat/completions",
+            headers={"Authorization": f"Bearer {NVIDIA_NIM_API_KEY}"},
+            json={
+                "model": NVIDIA_NIM_MODEL,
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": GROQ_TEMPERATURE,
+                "max_tokens": max_tokens,
+            },
+            timeout=30.0
+        )
+        response.raise_for_status()
+        return response.json()["choices"][0]["message"]["content"].strip()
+    except Exception as e:
+        log_error("NVIDIA API call failed", e)
+        raise
+
+
+def _call_llm(prompt: str, max_tokens: int = 600) -> str:
+    """Call Mistral first, fallback to Nvidia NIM, then fallback to Groq."""
+    try:
+        return _call_mistral(prompt, max_tokens=max_tokens)
+    except Exception as e1:
+        log.warning(f"Mistral failed, falling back to Nvidia NIM: {e1}")
+        try:
+            return _call_nvidia(prompt, max_tokens=max_tokens)
+        except Exception as e2:
+            log.warning(f"Nvidia NIM failed, falling back to Groq: {e2}")
+            return _call_groq(prompt, max_tokens=max_tokens)
 
 
 # ─────────────────────────────────────────────────────────────────

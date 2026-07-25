@@ -9,12 +9,17 @@ import os
 import io
 import textwrap
 from PIL import Image, ImageDraw, ImageFont
+try:
+    from pilmoji import Pilmoji
+except ImportError:
+    Pilmoji = None
+
 from utils.logger import get_logger, log_error
 from config.settings import (
     CAROUSEL_CANVAS_SIZE, CAROUSEL_MARGIN, CAROUSEL_CONTENT_SIZE,
     CAROUSEL_MAX_SLIDES, CAROUSEL_MAX_WORDS_PER_SLIDE,
     CAROUSEL_COLORS as C, CAROUSEL_FONTS as F,
-    CAROUSEL_OUTPUT_DIR, CAROUSEL_YOUR_HANDLE,
+    CAROUSEL_OUTPUT_DIR,
 )
 
 log = get_logger("carousel")
@@ -141,6 +146,8 @@ def _render_cover(slide_data: dict) -> Image.Image:
     draw = ImageDraw.Draw(img)
 
     category = slide_data.get("category_label", "AI TOOLS").upper()
+    if "🌿" not in category:
+        category = f"🌿 {category}"
     heading = slide_data.get("heading", "")
     subheading = slide_data.get("subheading", "")
 
@@ -159,7 +166,21 @@ def _render_cover(slide_data: dict) -> Image.Image:
 
     # Draw category label
     y = start_y
-    _draw_centered_text(draw, category, cat_font, C["muted_text"], y, max_width=CONTENT_W)
+    if Pilmoji is not None and "🌿" in category:
+        # Measure using pilmoji context
+        with Pilmoji(img) as pilmoji:
+            # textbbox isn't easily supported for emojis without custom logic, 
+            # so we use a slightly rough approximation of width, or standard bbox
+            # Actually Pilmoji can just draw. For centering:
+            bbox = draw.textbbox((0, 0), category, font=cat_font)
+            line_w = bbox[2] - bbox[0]
+            # Add a bit of width for the emoji offset
+            line_w += 20
+            x = CONTENT_X + (CONTENT_W - line_w) // 2
+            pilmoji.text((x, y), category, font=cat_font, fill=C["muted_text"])
+    else:
+        _draw_centered_text(draw, category, cat_font, C["muted_text"], y, max_width=CONTENT_W)
+        
     y += cat_h + gap1
 
     # Draw main headline (may wrap)
@@ -168,7 +189,7 @@ def _render_cover(slide_data: dict) -> Image.Image:
 
     # Draw subheadline
     if subheading:
-        _draw_centered_text(draw, subheading, sub_font, C["body_text"], y, max_width=CONTENT_W)
+        _draw_centered_text(draw, subheading, sub_font, C["muted_text"], y, max_width=CONTENT_W)
 
     return img
 
@@ -198,7 +219,7 @@ def _render_content(slide_data: dict, slide_number: int) -> Image.Image:
     head_h = _text_height(draw, heading, head_font, CONTENT_W)
     body_h = _text_height(draw, body, body_font, CONTENT_W) if body else 0
 
-    gap_head_body = 32
+    gap_head_body = 60
     total_h = head_h + gap_head_body + body_h
     start_y = CONTENT_Y + (CONTENT_H - total_h) // 2
 
@@ -212,12 +233,7 @@ def _render_content(slide_data: dict, slide_number: int) -> Image.Image:
         if highlight and highlight in body:
             y = _draw_body_with_highlight(draw, body, body_font, highlight, y)
         else:
-            _draw_centered_text(draw, body, body_font, C["body_text"], y, max_width=CONTENT_W)
-
-    # Footer — bottom center
-    footer_font = _body_font(F["footer_size"])
-    footer_y = CAROUSEL_CANVAS_SIZE - CAROUSEL_MARGIN - F["footer_size"]
-    _draw_centered_text(draw, CAROUSEL_YOUR_HANDLE, footer_font, C["muted_text"], footer_y, max_width=CONTENT_W)
+            y = _draw_body_paragraphs(draw, body, body_font, C["body_text"], y)
 
     return img
 
@@ -252,11 +268,6 @@ def _render_cta(slide_data: dict, slide_number: int) -> Image.Image:
         _draw_highlight_box(draw, highlight, body_font, C["highlight_yellow"],
                             C["primary_text"], y, CONTENT_X, CONTENT_W)
 
-    # Footer
-    footer_font = _body_font(F["footer_size"])
-    footer_y = CAROUSEL_CANVAS_SIZE - CAROUSEL_MARGIN - F["footer_size"]
-    _draw_centered_text(draw, CAROUSEL_YOUR_HANDLE, footer_font, C["muted_text"], footer_y, max_width=CONTENT_W)
-
     return img
 
 
@@ -264,10 +275,16 @@ def _render_cta(slide_data: dict, slide_number: int) -> Image.Image:
 # DRAWING HELPERS
 # ─────────────────────────────────────────────────────────────────
 
+def _get_line_height(font) -> int:
+    """Return tighter line height for larger headline fonts, standard for body."""
+    if font.size >= 60:
+        return int(font.size * 1.1)
+    return int(font.size * 1.4)
+
 def _draw_centered_text(draw, text: str, font, color: str, y: int, max_width: int):
     """Draw word-wrapped text centered horizontally."""
     lines = _wrap_text(draw, text, font, max_width)
-    line_h = font.size + int(font.size * 0.5)
+    line_h = _get_line_height(font)
 
     for line in lines:
         bbox = draw.textbbox((0, 0), line, font=font)
@@ -280,7 +297,7 @@ def _draw_centered_text(draw, text: str, font, color: str, y: int, max_width: in
 def _text_height(draw, text: str, font, max_width: int) -> int:
     """Calculate total height of wrapped text block."""
     lines = _wrap_text(draw, text, font, max_width)
-    line_h = font.size + int(font.size * 0.5)
+    line_h = _get_line_height(font)
     return len(lines) * line_h
 
 
@@ -311,7 +328,7 @@ def _draw_highlight_box(draw, text: str, font, bg_color: str, text_color: str,
     lines = _wrap_text(draw, text, font, max_width - 40)
     padding_h, padding_v = 16, 10
     radius = 8
-    line_h = font.size + int(font.size * 0.5)
+    line_h = _get_line_height(font)
 
     for line in lines:
         bbox = draw.textbbox((0, 0), line, font=font)
@@ -325,31 +342,40 @@ def _draw_highlight_box(draw, text: str, font, bg_color: str, text_color: str,
         y += line_h + padding_v
 
 
+def _draw_body_paragraphs(draw, body: str, font, color: str, y: int) -> int:
+    """Draw body text with spacing between double newlines."""
+    paragraphs = body.split("\n\n")
+    for i, p in enumerate(paragraphs):
+        p = p.strip()
+        if not p:
+            continue
+        _draw_centered_text(draw, p, font, color, y, max_width=CONTENT_W)
+        y += _text_height(draw, p, font, CONTENT_W) + (40 if i < len(paragraphs) - 1 else 0)
+    return y
+
 def _draw_body_with_highlight(draw, body: str, font, highlight: str, y: int) -> int:
     """
     Draw body text, rendering the highlight_phrase with a green background box
     and the rest as plain text. Returns new y after all text is drawn.
     """
     if not highlight or highlight not in body:
-        _draw_centered_text(draw, body, font, C["body_text"], y, max_width=CONTENT_W)
-        return y + _text_height(draw, body, font, CONTENT_W)
+        return _draw_body_paragraphs(draw, body, font, C["body_text"], y)
 
     parts = body.split(highlight, 1)
     before = parts[0].strip()
     after = parts[1].strip() if len(parts) > 1 else ""
 
     if before:
-        _draw_centered_text(draw, before, font, C["body_text"], y, max_width=CONTENT_W)
-        y += _text_height(draw, before, font, CONTENT_W) + 8
+        y = _draw_body_paragraphs(draw, before, font, C["body_text"], y)
+        y += 40  # paragraph gap
 
     # Highlighted phrase
-    _draw_highlight_box(draw, highlight, font, C["highlight_green"],
+    _draw_highlight_box(draw, highlight, font, C["highlight_yellow"],
                         C["primary_text"], y, CONTENT_X, CONTENT_W)
-    y += _text_height(draw, highlight, font, CONTENT_W) + 16
+    y += _text_height(draw, highlight, font, CONTENT_W) + 40
 
     if after:
-        _draw_centered_text(draw, after, font, C["body_text"], y, max_width=CONTENT_W)
-        y += _text_height(draw, after, font, CONTENT_W)
+        y = _draw_body_paragraphs(draw, after, font, C["body_text"], y)
 
     return y
 
@@ -367,7 +393,7 @@ def _draw_bullets(draw, bullets: list[str], start_y: int) -> int:
 
     y = start_y
     for bullet in bullets[:3]:
-        line_h = body_font.size + int(body_font.size * 0.5)
+        line_h = _get_line_height(body_font)
         cy = y + body_font.size // 2
 
         # Coral dot
