@@ -246,15 +246,15 @@ def _call_nvidia(prompt: str, max_tokens: int = 600) -> str:
 
 
 def _call_llm(prompt: str, max_tokens: int = 600) -> str:
-    """Call Mistral first, fallback to Nvidia NIM, then fallback to Groq."""
+    """Call Nvidia NIM first, fallback to Mistral, then fallback to Groq."""
     try:
-        return _call_mistral(prompt, max_tokens=max_tokens)
+        return _call_nvidia(prompt, max_tokens=max_tokens)
     except Exception as e1:
-        log.warning(f"Mistral failed, falling back to Nvidia NIM: {e1}")
+        log.warning(f"Nvidia NIM failed, falling back to Mistral: {e1}")
         try:
-            return _call_nvidia(prompt, max_tokens=max_tokens)
+            return _call_mistral(prompt, max_tokens=max_tokens)
         except Exception as e2:
-            log.warning(f"Nvidia NIM failed, falling back to Groq: {e2}")
+            log.warning(f"Mistral failed, falling back to Groq: {e2}")
             return _call_groq(prompt, max_tokens=max_tokens)
 
 
