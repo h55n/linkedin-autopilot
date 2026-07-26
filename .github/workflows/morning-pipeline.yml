@@ -1,0 +1,72 @@
+name: Morning Pipeline
+
+on:
+  schedule:
+    # 7:00 AM IST = 01:30 UTC
+    - cron: '30 1 * * *'
+  workflow_dispatch:
+    inputs:
+      run_bot_session:
+        description: 'Also start bot-session after pipeline?'
+        required: false
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+
+jobs:
+  pipeline:
+    name: Scrape → Score → Generate → Send Brief
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    env:
+      STATE_BACKEND: gist
+      GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
+      GIST_ID: ${{ secrets.GIST_ID }}
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+      NVIDIA_NIM_API_KEY: ${{ secrets.NVIDIA_NIM_API_KEY }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      LINKEDIN_ACCESS_TOKEN: ${{ secrets.LINKEDIN_ACCESS_TOKEN }}
+      LINKEDIN_PERSON_URN: ${{ secrets.LINKEDIN_PERSON_URN }}
+      REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID }}
+      REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
+      REDDIT_USER_AGENT: linkedin-autopilot/1.0
+      POST_TIME: "07:00"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Install Playwright Chromium
+        run: python -m playwright install chromium --with-deps
+
+      - name: Run morning pipeline
+        run: python scripts/run_pipeline.py
+
+      # ── Trigger bot session ────────────────────────────────────────
+      - name: Trigger bot-session workflow
+        if: ${{ github.event_name == 'schedule' || inputs.run_bot_session == 'true' }}
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'bot-session.yml',
+              ref: context.ref || 'main',
+            });
+            console.log('bot-session workflow triggered');

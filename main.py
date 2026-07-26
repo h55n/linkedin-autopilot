@@ -1,7 +1,20 @@
 """
 main.py
 Entry point for LinkedIn Autopilot.
-Starts the APScheduler (cron) and the Telegram bot polling loop.
+
+DEPLOYMENT MODES
+────────────────
+GitHub Actions (recommended / primary):
+  - Schedule + bot session are handled by two separate GHA workflows:
+      .github/workflows/morning-pipeline.yml  → runs scripts/run_pipeline.py
+      .github/workflows/bot-session.yml       → runs scripts/run_bot_session.py
+  - This file is NOT used by GHA.  State is persisted via GitHub Gist.
+  - See scripts/setup_gist_state.py to create the Gist before first deploy.
+
+Local / Render (legacy fallback):
+  - Run `python main.py` to start the APScheduler + Telegram bot polling loop.
+  - State is stored in state/today.json on disk.
+  - Set STATE_BACKEND=file (or leave unset) in .env for local mode.
 """
 
 import asyncio

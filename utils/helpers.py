@@ -1,6 +1,12 @@
 """
 utils/helpers.py
 Shared utility functions used across modules.
+
+State backend:
+  STATE_BACKEND=file (default) — reads/writes state/today.json on disk.
+  STATE_BACKEND=gist           — reads/writes a GitHub Gist, so state
+                                  survives across ephemeral GHA runs.
+                                  Requires GIST_TOKEN and GIST_ID env vars.
 """
 
 import hashlib
@@ -63,8 +69,55 @@ def age_label(age_hours: float) -> str:
 
 
 # ── State management ──────────────────────────────────────────────
+# Backend is chosen once at import time via STATE_BACKEND env var.
 
-def read_state() -> dict:
+_STATE_BACKEND = os.getenv("STATE_BACKEND", "file").lower()
+_GIST_TOKEN = os.getenv("GIST_TOKEN", "")
+_GIST_ID = os.getenv("GIST_ID", "")
+_GIST_FILENAME = "linkedin_autopilot_state.json"
+_GIST_API = f"https://api.github.com/gists/{_GIST_ID}"
+
+
+# ── Gist helpers ──────────────────────────────────────────────────
+
+def _gist_headers() -> dict:
+    return {
+        "Authorization": f"Bearer {_GIST_TOKEN}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+
+
+def _read_gist_state() -> dict:
+    """Fetch state JSON from the GitHub Gist."""
+    import requests  # already in requirements
+    try:
+        resp = requests.get(_GIST_API, headers=_gist_headers(), timeout=10)
+        resp.raise_for_status()
+        content = resp.json()["files"][_GIST_FILENAME]["content"]
+        return json.loads(content)
+    except Exception:
+        return {}
+
+
+def _write_gist_state(data: dict):
+    """Push state JSON to the GitHub Gist."""
+    import requests
+    payload = {
+        "files": {
+            _GIST_FILENAME: {
+                "content": json.dumps(data, indent=2, ensure_ascii=False)
+            }
+        }
+    }
+    resp = requests.patch(_GIST_API, headers=_gist_headers(),
+                          json=payload, timeout=10)
+    resp.raise_for_status()
+
+
+# ── File helpers ──────────────────────────────────────────────────
+
+def _read_file_state() -> dict:
     if not os.path.exists(STATE_FILE):
         return {}
     try:
@@ -74,10 +127,27 @@ def read_state() -> dict:
         return {}
 
 
-def write_state(data: dict):
+def _write_file_state(data: dict):
     os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
     with open(STATE_FILE, "w") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
+
+
+# ── Public API (same interface as before) ─────────────────────────
+
+def read_state() -> dict:
+    """Read today's state from the configured backend."""
+    if _STATE_BACKEND == "gist":
+        return _read_gist_state()
+    return _read_file_state()
+
+
+def write_state(data: dict):
+    """Write today's state to the configured backend."""
+    if _STATE_BACKEND == "gist":
+        _write_gist_state(data)
+    else:
+        _write_file_state(data)
 
 
 def update_state(**kwargs):
