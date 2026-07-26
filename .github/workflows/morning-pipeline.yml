@@ -1,5 +1,9 @@
 name: Morning Pipeline
 
+permissions:
+  actions: write
+  contents: read
+
 on:
   schedule:
     # 7:00 AM IST = 01:30 UTC
