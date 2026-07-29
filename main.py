@@ -52,6 +52,7 @@ async def main_pipeline():
     Called at 07:00 AM IST by scheduler.
     """
     log.info("=== Pipeline starting ===")
+    await check_linkedin_token()
     state = read_state()
 
     # Don't run twice on the same day

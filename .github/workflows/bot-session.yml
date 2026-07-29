@@ -2,15 +2,17 @@ name: Bot Session
 
 on:
   workflow_dispatch:
-    # Triggered automatically by morning-pipeline.yml after the brief is sent.
-    # Can also be triggered manually from the Actions tab.
+    inputs:
+      telegram_payload:
+        description: 'Raw Telegram JSON payload'
+        required: true
+        type: string
 
 jobs:
   bot-session:
-    name: Wait for Reply → Draft → Post to LinkedIn
+    name: Process Telegram Message
     runs-on: ubuntu-latest
-    # Max 2h reminder + 2h skip window + buffer. LinkedIn posting takes seconds.
-    timeout-minutes: 150
+    timeout-minutes: 15
 
     env:
       STATE_BACKEND: gist
@@ -26,6 +28,7 @@ jobs:
       REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID }}
       REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
       REDDIT_USER_AGENT: linkedin-autopilot/1.0
+      TELEGRAM_PAYLOAD: ${{ inputs.telegram_payload }}
 
     steps:
       - name: Checkout
@@ -43,5 +46,5 @@ jobs:
       - name: Install Playwright Chromium
         run: python -m playwright install chromium --with-deps
 
-      - name: Run bot session
+      - name: Run single-shot bot session
         run: python scripts/run_bot_session.py

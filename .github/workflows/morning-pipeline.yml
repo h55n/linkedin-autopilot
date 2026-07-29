@@ -9,15 +9,6 @@ on:
     # 7:00 AM IST = 01:30 UTC
     - cron: '30 1 * * *'
   workflow_dispatch:
-    inputs:
-      run_bot_session:
-        description: 'Also start bot-session after pipeline?'
-        required: false
-        default: 'true'
-        type: choice
-        options:
-          - 'true'
-          - 'false'
 
 jobs:
   pipeline:
@@ -59,18 +50,3 @@ jobs:
 
       - name: Run morning pipeline
         run: python scripts/run_pipeline.py
-
-      # ── Trigger bot session ────────────────────────────────────────
-      - name: Trigger bot-session workflow
-        if: ${{ github.event_name == 'schedule' || inputs.run_bot_session == 'true' }}
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            await github.rest.actions.createWorkflowDispatch({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              workflow_id: 'bot-session.yml',
-              ref: context.ref || 'main',
-            });
-            console.log('bot-session workflow triggered');
