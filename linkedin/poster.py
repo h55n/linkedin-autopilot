@@ -10,8 +10,9 @@ import requests
 from utils.logger import get_logger, log_error
 from config.settings import (
     LINKEDIN_ACCESS_TOKEN, LINKEDIN_PERSON_URN, LINKEDIN_API_BASE,
-    LINKEDIN_TOKEN_WARNING_DAYS, LINKEDIN_TOKEN_DATE_FILE,
+    LINKEDIN_TOKEN_WARNING_DAYS,
 )
+from utils.helpers import read_state, update_state
 
 log = get_logger("linkedin")
 
@@ -87,6 +88,44 @@ def post_carousel_to_linkedin(pdf_path: str, intro_text: str, headline: str = "c
     return url
 
 
+def post_image_to_linkedin(image_path: str, post_text: str) -> str:
+    """
+    Upload an image and publish an image LinkedIn post.
+    Returns the LinkedIn post URL.
+    """
+    _check_token_age()
+
+    # Step 1: Register upload
+    asset_urn = _upload_image(image_path)
+
+    # Step 2: Create post referencing the asset
+    payload = {
+        "author": LINKEDIN_PERSON_URN,
+        "lifecycleState": "PUBLISHED",
+        "specificContent": {
+            "com.linkedin.ugc.ShareContent": {
+                "shareCommentary": {"text": post_text},
+                "shareMediaCategory": "IMAGE",
+                "media": [
+                    {
+                        "status": "READY",
+                        "media": asset_urn,
+                    }
+                ],
+            }
+        },
+        "visibility": {
+            "com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC"
+        },
+    }
+
+    resp = _api_post("/ugcPosts", payload)
+    post_id = resp.get("id", "")
+    url = _post_id_to_url(post_id)
+    log.info(f"Image post published: {url}")
+    return url
+
+
 # ─────────────────────────────────────────────────────────────────
 # PDF UPLOAD
 # ─────────────────────────────────────────────────────────────────
@@ -137,6 +176,52 @@ def _upload_pdf(pdf_path: str) -> str:
     return asset_urn
 
 
+def _upload_image(image_path: str) -> str:
+    """Upload an image to LinkedIn and return the asset URN."""
+    # Step 1a: Register upload
+    register_payload = {
+        "registerUploadRequest": {
+            "recipes": ["urn:li:digitalmediaRecipe:feedshare-image"],
+            "owner": LINKEDIN_PERSON_URN,
+            "serviceRelationships": [
+                {
+                    "relationshipType": "OWNER",
+                    "identifier": "urn:li:userGeneratedContent",
+                }
+            ],
+        }
+    }
+
+    resp = _api_post("/assets?action=registerUpload", register_payload)
+    upload_url = (
+        resp.get("value", {})
+        .get("uploadMechanism", {})
+        .get("com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest", {})
+        .get("uploadUrl", "")
+    )
+    asset_urn = resp.get("value", {}).get("asset", "")
+
+    if not upload_url or not asset_urn:
+        raise ValueError(f"LinkedIn image upload registration failed: {resp}")
+
+    # Step 1b: Upload the actual image binary
+    with open(image_path, "rb") as f:
+        image_bytes = f.read()
+
+    upload_resp = requests.put(
+        upload_url,
+        data=image_bytes,
+        headers={
+            "Authorization": f"Bearer {LINKEDIN_ACCESS_TOKEN}",
+            "Content-Type": "application/octet-stream",
+        },
+        timeout=60,
+    )
+    upload_resp.raise_for_status()
+    log.info(f"Image uploaded: {asset_urn}")
+    return asset_urn
+
+
 # ─────────────────────────────────────────────────────────────────
 # API HELPERS
 # ─────────────────────────────────────────────────────────────────
@@ -163,9 +248,8 @@ def _api_post(endpoint: str, payload: dict) -> dict:
 def _post_id_to_url(post_id: str) -> str:
     if not post_id:
         return "https://www.linkedin.com/feed/"
-    # Extract the numeric part from urn:li:ugcPost:XXXXXXX
-    num = post_id.split(":")[-1]
-    return f"https://www.linkedin.com/feed/update/urn:li:ugcPost:{num}/"
+    # Use the raw URN (could be urn:li:share:XXXX or urn:li:ugcPost:XXXX)
+    return f"https://www.linkedin.com/feed/update/{post_id}/"
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -174,12 +258,13 @@ def _post_id_to_url(post_id: str) -> str:
 
 def _check_token_age() -> int:
     """Check token age and log warning if approaching expiry. Returns days old."""
-    if not os.path.exists(LINKEDIN_TOKEN_DATE_FILE):
+    state = read_state()
+    date_str = state.get("linkedin_token_date")
+    
+    if not date_str:
         return 0
 
     try:
-        with open(LINKEDIN_TOKEN_DATE_FILE) as f:
-            date_str = f.read().strip()
         from datetime import date
         token_date = date.fromisoformat(date_str)
         days_old = (date.today() - token_date).days
@@ -199,7 +284,5 @@ def _check_token_age() -> int:
 def record_token_date():
     """Record today as the token creation date (call after refreshing token)."""
     from datetime import date
-    os.makedirs(os.path.dirname(LINKEDIN_TOKEN_DATE_FILE), exist_ok=True)
-    with open(LINKEDIN_TOKEN_DATE_FILE, "w") as f:
-        f.write(date.today().isoformat())
-    log.info("LinkedIn token date recorded")
+    update_state(linkedin_token_date=date.today().isoformat())
+    log.info("LinkedIn token date recorded to state")

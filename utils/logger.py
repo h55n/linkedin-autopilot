@@ -8,7 +8,8 @@ import logging
 import os
 import traceback
 from datetime import date, datetime
-from config.settings import DAILY_LOG_FILE, STREAK_FILE, ERROR_LOG_FILE
+from config.settings import DAILY_LOG_FILE, ERROR_LOG_FILE
+from utils.helpers import read_state, update_state
 
 # ── Python standard logger ────────────────────────────────────────
 
@@ -27,14 +28,14 @@ def get_logger(name: str) -> logging.Logger:
 def _ensure_file(path: str, default):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     if not os.path.exists(path):
-        with open(path, "w") as f:
+        with open(path, "w", encoding="utf-8") as f:
             json.dump(default, f, indent=2)
 
 
 def _read_json(path: str, default):
     _ensure_file(path, default)
     try:
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             return json.load(f)
     except (json.JSONDecodeError, OSError):
         return default
@@ -42,7 +43,7 @@ def _read_json(path: str, default):
 
 def _write_json(path: str, data):
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w") as f:
+    with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
 
 
@@ -99,7 +100,8 @@ def get_recent_log(days: int = 7) -> list:
 # ── Streak ────────────────────────────────────────────────────────
 
 def _update_streak(status: str):
-    streak_data = _read_json(STREAK_FILE, {"count": 0, "last_posted": None})
+    state = read_state()
+    streak_data = state.get("streak", {"count": 0, "last_posted": None})
     today = date.today().isoformat()
 
     if status == "posted":
@@ -119,11 +121,12 @@ def _update_streak(status: str):
         # skipped or cancelled — reset streak
         streak_data["count"] = 0
 
-    _write_json(STREAK_FILE, streak_data)
+    update_state(streak=streak_data)
 
 
 def get_streak() -> int:
-    data = _read_json(STREAK_FILE, {"count": 0})
+    state = read_state()
+    data = state.get("streak", {"count": 0})
     return data.get("count", 0)
 
 
@@ -133,7 +136,7 @@ def log_error(context: str, exc: Exception = None):
     """Append error with full traceback to errors.log."""
     os.makedirs(os.path.dirname(ERROR_LOG_FILE), exist_ok=True)
     timestamp = datetime.now().isoformat()
-    with open(ERROR_LOG_FILE, "a") as f:
+    with open(ERROR_LOG_FILE, "a", encoding="utf-8") as f:
         f.write(f"\n{'='*60}\n")
         f.write(f"{timestamp} | {context}\n")
         if exc:

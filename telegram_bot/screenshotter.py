@@ -45,8 +45,8 @@ async def take_screenshot(url: str, filename: str = None) -> str | None:
             )
             page = await context.new_page()
 
-            # Navigate and wait for content to settle
-            await page.goto(url, wait_until="networkidle", timeout=20000)
+            # Navigate and wait for content to settle (domcontentloaded is much safer than networkidle)
+            await page.goto(url, wait_until="domcontentloaded", timeout=25000)
             await page.wait_for_timeout(2000)
 
             # Dismiss cookie banners / modals if present

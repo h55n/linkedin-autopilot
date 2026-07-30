@@ -23,7 +23,7 @@ from telegram_bot.messages import (
 )
 from telegram_bot.voice_handler import transcribe_voice
 from generator.generator import generate_post, generate_post_with_edit
-from linkedin.poster import post_text_to_linkedin, post_carousel_to_linkedin
+from linkedin.poster import post_text_to_linkedin, post_carousel_to_linkedin, post_image_to_linkedin
 from carousel.carousel_gen import generate_carousel_pdf
 from telegram_bot.screenshotter import take_screenshots_for_story
 from config.settings import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
@@ -255,6 +255,7 @@ async def _generate_and_send_draft(msg, story: dict, format_type: str, angle: st
         try:
             screenshot_paths = await take_screenshots_for_story(story)
             if screenshot_paths:
+                update_state(current_screenshot_paths=screenshot_paths)
                 bot = Bot(token=TELEGRAM_BOT_TOKEN)
                 for path in screenshot_paths:
                     with open(path, "rb") as f:
@@ -309,6 +310,13 @@ async def _publish(msg, state: dict, story: dict, format_type: str, post_text: s
             pdf_path = generate_carousel_pdf(carousel_data)
             headline = carousel_data.get("slides", [{}])[0].get("heading", story.get("title", ""))
             url = post_carousel_to_linkedin(pdf_path, post_text, headline)
+        elif format_type == "image":
+            paths = state.get("current_screenshot_paths", [])
+            if paths and os.path.exists(paths[0]):
+                url = post_image_to_linkedin(paths[0], post_text)
+            else:
+                log.warning("No screenshot found for image post, falling back to text post")
+                url = post_text_to_linkedin(post_text)
         else:
             url = post_text_to_linkedin(post_text)
 

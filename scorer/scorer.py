@@ -12,7 +12,8 @@ from config.settings import (
     BOOST_KEYWORD_BONUS, COMMENT_HIGH_MULTIPLIER, COMMENT_MID_MULTIPLIER,
     COMMENT_HIGH_THRESHOLD, COMMENT_MID_THRESHOLD, NOISE_PENALTY,
     INDIA_KEYWORDS, AI_KEYWORDS, BOOST_KEYWORDS, NOISE_KEYWORDS,
-    TOOL_LAUNCH_KEYWORDS, BENCHMARK_KEYWORDS,
+    TOOL_LAUNCH_KEYWORDS, BENCHMARK_KEYWORDS, OPPORTUNITY_BONUS,
+    OPPORTUNITY_KEYWORDS, TIER1_OPPORTUNITY_BONUS, TIER1_COMPANY_KEYWORDS
 )
 
 log = get_logger("scorer")
@@ -37,8 +38,8 @@ def rank_and_pick(stories: list[dict]) -> list[dict]:
     # Sort descending
     scored.sort(key=lambda s: s["final_score"], reverse=True)
 
-    # Diversity pass: ensure at least one India story in top 3
-    top3 = _diversity_pass(scored)
+    # Mix pass: ensure 1 Opportunity, 1 India, 1 General
+    top3 = _mix_pass(scored)
 
     # Attach format suggestion
     for story in top3:
@@ -61,6 +62,7 @@ def _score_story(story: dict) -> dict:
     # ── Detect flags ──────────────────────────────────────────────
     s["india_relevant"] = any(kw in text for kw in INDIA_KEYWORDS)
     s["is_ai_related"] = any(kw in text for kw in AI_KEYWORDS)
+    s["is_opportunity"] = any(kw in text for kw in OPPORTUNITY_KEYWORDS)
 
     if s.get("region") == "india" or s["india_relevant"]:
         s["region"] = "india"
@@ -83,6 +85,12 @@ def _score_story(story: dict) -> dict:
         bonuses += TOOL_LAUNCH_BONUS
     if s["is_ai_related"]:
         bonuses += AI_KEYWORD_BONUS
+    if s["is_opportunity"]:
+        bonuses += OPPORTUNITY_BONUS
+        # If it's an opportunity AND mentions a Tier 1 company/global keyword, make it dominate
+        if any(kw in text for kw in TIER1_COMPANY_KEYWORDS):
+            bonuses += TIER1_OPPORTUNITY_BONUS
+            log.info(f"Tier 1 opportunity detected: {s.get('title')[:30]}")
 
     boost_hits = sum(1 for kw in BOOST_KEYWORDS if kw in text)
     bonuses += boost_hits * BOOST_KEYWORD_BONUS
@@ -114,31 +122,56 @@ def _recency_multiplier(age_hours: float) -> float:
 
 
 # ─────────────────────────────────────────────────────────────────
-# DIVERSITY PASS
+# MIX PASS
 # ─────────────────────────────────────────────────────────────────
 
-def _diversity_pass(scored: list[dict]) -> list[dict]:
+def _mix_pass(scored: list[dict]) -> list[dict]:
     """
-    Ensure at least one India story in the top 3.
-    If not, replace the 3rd pick with the top India story (if one exists).
+    Ensure a true mix of content in the top 3:
+    1. Highest scoring Opportunity (if exists)
+    2. Highest scoring India story (if exists)
+    3. Highest scoring General/Tool story
     """
-    top3 = scored[:3]
+    top3 = []
+    picked_ids = set()
 
-    india_in_top3 = any(s.get("india_relevant") for s in top3)
-    if india_in_top3:
-        return top3
+    # 1. Opportunity
+    for s in scored:
+        if s.get("is_opportunity") and s["id"] not in picked_ids:
+            top3.append(s)
+            picked_ids.add(s["id"])
+            log.info(f"Mix pass: added opportunity '{s['title'][:40]}'")
+            break
 
-    # Find the top India story not already in top3
-    top3_ids = {s["id"] for s in top3}
-    india_stories = [
-        s for s in scored
-        if s.get("india_relevant") and s["id"] not in top3_ids
-    ]
+    # 2. India
+    for s in scored:
+        if s.get("india_relevant") and s["id"] not in picked_ids:
+            top3.append(s)
+            picked_ids.add(s["id"])
+            log.info(f"Mix pass: added India story '{s['title'][:40]}'")
+            break
 
-    if india_stories:
-        top3[2] = india_stories[0]   # replace 3rd pick
-        log.info(f"Diversity pass: inserted India story '{india_stories[0]['title'][:50]}'")
+    # 3. General AI/Tool (must NOT be an opportunity)
+    for s in scored:
+        if len(top3) >= 3:
+            break
+        if s["id"] not in picked_ids and not s.get("is_opportunity"):
+            top3.append(s)
+            picked_ids.add(s["id"])
+            log.info(f"Mix pass: added general/tool story '{s['title'][:40]}'")
+            break
+            
+    # 4. Fallback (if we somehow still don't have 3, take highest remaining)
+    for s in scored:
+        if len(top3) >= 3:
+            break
+        if s["id"] not in picked_ids:
+            top3.append(s)
+            picked_ids.add(s["id"])
+            log.info(f"Mix pass: added fallback story '{s['title'][:40]}'")
 
+    # Sort so the absolute highest score is shown first
+    top3.sort(key=lambda x: x.get("final_score", 0), reverse=True)
     return top3
 
 

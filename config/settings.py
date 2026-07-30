@@ -70,6 +70,11 @@ REDDIT_SUBREDDITS = [
     "programming",
     "startups",
     "india",
+    "csMajors",
+    "hackathons",
+    "internships",
+    "csCareerQuestions",
+    "cscareerquestionsIN",
 ]
 
 RSS_FEEDS = {
@@ -82,6 +87,10 @@ RSS_FEEDS = {
     "techcrunch_ai":  "https://techcrunch.com/category/artificial-intelligence/feed/",
     "venturebeat_ai": "https://venturebeat.com/category/ai/feed/",
     "betalist":       "https://betalist.com/feed",
+    # Events & Opportunities (Actual Hackathons, Fellowships, Programs)
+    "gnews_ai_hackathons": "https://news.google.com/rss/search?q=AI+hackathon+when:7d&hl=en-US&gl=US&ceid=US:en",
+    "gnews_fellowships":   "https://news.google.com/rss/search?q=AI+fellowship+OR+tech+fellowship+when:7d&hl=en-US&gl=US&ceid=US:en",
+    "gnews_programs":      "https://news.google.com/rss/search?q=student+developer+program+OR+competitive+coding+event+when:7d&hl=en-US&gl=US&ceid=US:en",
 }
 
 PRODUCT_HUNT_RSS = "https://www.producthunt.com/feed"
@@ -103,6 +112,8 @@ RECENCY_MULTIPLIERS = {
 INDIA_BONUS = 30
 TOOL_LAUNCH_BONUS = 25
 AI_KEYWORD_BONUS = 20
+OPPORTUNITY_BONUS = 10000     # Massive bonus to guarantee it beats GitHub trending
+TIER1_OPPORTUNITY_BONUS = 50000 # Absolute highest bonus for global/top-tier companies
 BOOST_KEYWORD_BONUS = 5       # per keyword hit
 SHOW_HN_RAW_BONUS = 50        # added to raw score before formula
 COMMENT_HIGH_MULTIPLIER = 1.3   # comments > 200
@@ -129,6 +140,18 @@ TOOL_LAUNCH_KEYWORDS = [
     "show hn", "api", "sdk", "v2", "v3", "beta", "now available",
 ]
 
+OPPORTUNITY_KEYWORDS = [
+    "hackathon", "fellowship", "internship", "new grad", "scholarship",
+    "grant", "open call", "applications open", "hiring", "apply now",
+    "mlh", "stipend",
+]
+
+TIER1_COMPANY_KEYWORDS = [
+    "vercel", "figma", "openai", "y combinator", "yc", "google", 
+    "microsoft", "meta", "anthropic", "epoch", "epoc", "config", "aws", 
+    "stripe", "global", "world", "india's biggest", "national"
+]
+
 AI_KEYWORDS = [
     "ai", "llm", "gpt", "claude", "gemini", "mistral", "llama",
     "machine learning", "deep learning", "neural", "transformer",
@@ -145,7 +168,10 @@ BOOST_KEYWORDS = [
 
 NOISE_KEYWORDS = [
     "nft", "crypto", "bitcoin", "blockchain", "web3", "metaverse",
-    "celebrity",
+    "celebrity", "how to win", "hackathon strategy", "hackathon tips",
+    "hackathon recap", "my hackathon experience", "guide to winning",
+    "best hackathon strategy", "why winning", "how i won", "lessons learned",
+    "mistakes to avoid", "things to know before", "survive a hackathon",
 ]
 
 BENCHMARK_KEYWORDS = [
@@ -231,11 +257,11 @@ pune, bangalore, and mumbai. they understand what it means to build
 in india — the constraints, the opportunities, the scale.
 
 WHAT THEY CARE ABOUT
-- ai tools and model launches that actually change what's possible
-- indian startup ecosystem: funding, launches, policy, people
-- developer tools: things that save time or unlock new workflows
-- benchmark shifts: when a new model or tool genuinely outperforms what came before
-- global tech moves that will hit india in 6-12 months
+- ai tools, models, and dev tools that actually change what's possible
+- benchmark shifts: when a new model genuinely outperforms what came before
+- open big hackathons, ai fellowships, and competitive coding events
+- indian startup ecosystem and tech moves that affect developers
+- actionable tech opportunities (grants, stipends, hiring)
 
 WHAT THEY THINK IS NOISE
 - hype without substance
@@ -244,7 +270,7 @@ WHAT THEY THINK IS NOISE
 - drama, lawsuits, celebrity tech unless there's a real technical angle
 
 WRITING RULES — ABSOLUTE. NEVER BREAK THESE.
-1. all lowercase. every word. no exceptions. not even proper nouns.
+1. all lowercase. every word. no exceptions for proper nouns. EXCEPT: short-form acronyms (like ECC, MIT, AI, API) MUST remain in ALL CAPS.
 2. no em dashes (—). if you feel like using one, use a comma or a period instead.
 3. no corporate speak. banned words: game-changer, revolutionary, exciting,
    disruptive, groundbreaking, innovative, paradigm, ecosystem (unless quoting),

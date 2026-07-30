@@ -121,7 +121,7 @@ def _read_file_state() -> dict:
     if not os.path.exists(STATE_FILE):
         return {}
     try:
-        with open(STATE_FILE) as f:
+        with open(STATE_FILE, encoding="utf-8") as f:
             return json.load(f)
     except (json.JSONDecodeError, OSError):
         return {}
@@ -129,7 +129,7 @@ def _read_file_state() -> dict:
 
 def _write_file_state(data: dict):
     os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
-    with open(STATE_FILE, "w") as f:
+    with open(STATE_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
 
 
