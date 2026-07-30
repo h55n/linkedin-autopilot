@@ -28,7 +28,7 @@ from aiohttp import web
 
 from config.settings import TIMEZONE, POST_TIME, SKIP_AFTER_MINUTES, RUN_NOW
 from utils.logger import get_logger, log_error, log_skip
-from utils.helpers import read_state, update_state, now_ist
+from utils.helpers import read_state, update_state, now_ist, canonical_url
 from telegram_bot.bot import build_application, send_message, send_reminder, handle_skip_timeout
 from scraper.scraper import scrape_all
 from scorer.scorer import rank_and_pick
@@ -86,9 +86,15 @@ async def main_pipeline():
 
         # Step 5: Save state
         sent_at = now_ist().strftime("%H:%M IST")
+        
+        past_urls = set(state.get("past_urls", []))
+        for p in picks:
+            past_urls.add(canonical_url(p.get("url", "")))
+            
         update_state(
             date=today,
             picks=picks,
+            past_urls=list(past_urls),
             status="waiting",
             sent_at=sent_at,
             selected_story=None,

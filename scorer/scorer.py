@@ -86,11 +86,17 @@ def _score_story(story: dict) -> dict:
     if s["is_ai_related"]:
         bonuses += AI_KEYWORD_BONUS
     if s["is_opportunity"]:
-        bonuses += OPPORTUNITY_BONUS
-        # If it's an opportunity AND mentions a Tier 1 company/global keyword, make it dominate
-        if any(kw in text for kw in TIER1_COMPANY_KEYWORDS):
-            bonuses += TIER1_OPPORTUNITY_BONUS
-            log.info(f"Tier 1 opportunity detected: {s.get('title')[:30]}")
+        is_tier1 = any(kw in text for kw in TIER1_COMPANY_KEYWORDS)
+        if s["india_relevant"] or is_tier1:
+            bonuses += OPPORTUNITY_BONUS
+            if is_tier1:
+                bonuses += TIER1_OPPORTUNITY_BONUS
+                log.info(f"Tier 1 opportunity detected: {s.get('title')[:30]}")
+            else:
+                log.info(f"India opportunity detected: {s.get('title')[:30]}")
+        else:
+            # Demote niche opportunities so they don't dominate the mix pass
+            s["is_opportunity"] = False
 
     boost_hits = sum(1 for kw in BOOST_KEYWORDS if kw in text)
     bonuses += boost_hits * BOOST_KEYWORD_BONUS

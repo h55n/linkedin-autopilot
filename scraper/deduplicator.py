@@ -4,7 +4,7 @@ Removes duplicate and near-duplicate stories.
 """
 
 from thefuzz import fuzz
-from utils.helpers import canonical_url
+from utils.helpers import canonical_url, read_state
 from utils.logger import get_logger
 from config.settings import FUZZY_DEDUP_THRESHOLD
 
@@ -17,6 +17,9 @@ def deduplicate(stories: list[dict]) -> list[dict]:
     Also removes stories with no URL.
     Returns the deduplicated list (order preserved for first occurrence).
     """
+    state = read_state()
+    past_urls = set(state.get("past_urls", []))
+    
     seen_urls: set[str] = set()
     seen_titles: list[str] = []
     unique: list[dict] = []
@@ -28,10 +31,13 @@ def deduplicate(stories: list[dict]) -> list[dict]:
         if not url or not title:
             continue
 
-        # URL dedup
+        # URL dedup (current run and past runs)
         canon = canonical_url(url)
         if canon in seen_urls:
-            log.debug(f"URL dedup: {title[:60]}")
+            log.debug(f"URL dedup (current run): {title[:60]}")
+            continue
+        if canon in past_urls:
+            log.debug(f"URL dedup (past runs): {title[:60]}")
             continue
 
         # Fuzzy title dedup
