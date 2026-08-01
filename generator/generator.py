@@ -197,12 +197,11 @@ def _call_mistral(prompt: str, max_tokens: int = 600) -> str:
                 "temperature": GROQ_TEMPERATURE,
                 "max_tokens": max_tokens,
             },
-            timeout=30.0
+            timeout=10.0
         )
         response.raise_for_status()
         return response.json()["choices"][0]["message"]["content"].strip()
     except Exception as e:
-        log_error("Mistral API call failed", e)
         raise
 
 
@@ -236,12 +235,11 @@ def _call_nvidia(prompt: str, max_tokens: int = 600) -> str:
                 "temperature": GROQ_TEMPERATURE,
                 "max_tokens": max_tokens,
             },
-            timeout=30.0
+            timeout=10.0
         )
         response.raise_for_status()
         return response.json()["choices"][0]["message"]["content"].strip()
     except Exception as e:
-        log_error("NVIDIA API call failed", e)
         raise
 
 

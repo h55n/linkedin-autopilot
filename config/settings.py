@@ -60,7 +60,7 @@ REDDIT_STARTUPS_MIN_SCORE = 150
 REDDIT_TOP_PER_SUB = 10
 GITHUB_TRENDING_TOP = 5
 MAX_AGE_HOURS = 24             # skip stories older than this
-REQUEST_USER_AGENT = "LinkedInAutopilot/1.0"
+REQUEST_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 FUZZY_DEDUP_THRESHOLD = 85     # % similarity to consider duplicate
 
 REDDIT_SUBREDDITS = [

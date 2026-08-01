@@ -40,3 +40,4 @@ trafilatura>=1.9.0
 
 # Automated screenshots for image posts
 playwright>=1.44.0
+duckduckgo-search>=6.2.2

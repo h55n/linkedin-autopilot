@@ -5,6 +5,7 @@ Maintains conversation state in state/today.json.
 Only responds to TELEGRAM_CHAT_ID — all other messages are silently ignored.
 """
 
+import os
 import re
 import asyncio
 from telegram import Update, Bot
@@ -26,6 +27,7 @@ from generator.generator import generate_post, generate_post_with_edit
 from linkedin.poster import post_text_to_linkedin, post_carousel_to_linkedin, post_image_to_linkedin
 from carousel.carousel_gen import generate_carousel_pdf
 from telegram_bot.screenshotter import take_screenshots_for_story
+from scraper.researcher import research_topic
 from config.settings import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
 
 log = get_logger("telegram_bot")
@@ -41,6 +43,7 @@ def build_application() -> Application:
     app.add_handler(MessageHandler(filters.ALL, _handle_message))
     app.add_handler(CommandHandler("status", _handle_status))
     app.add_handler(CommandHandler("log", _handle_log))
+    app.add_handler(CommandHandler("research", _handle_research))
     return app
 
 
@@ -170,7 +173,8 @@ async def _handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # ── Catch-all for idle state ──────────────────────────────────
     await msg.reply_text(
         "nothing to do right now. next brief at 7 AM IST.\n"
-        "reply 'status' to check current state."
+        "reply 'status' to check current state.\n"
+        "use '/research <topic>' to research and generate a post on-demand."
     )
 
 
@@ -340,8 +344,34 @@ async def _publish(msg, state: dict, story: dict, format_type: str, post_text: s
 
 
 # ─────────────────────────────────────────────────────────────────
-# STATUS + LOG COMMANDS
+# STATUS + LOG + RESEARCH COMMANDS
 # ─────────────────────────────────────────────────────────────────
+
+async def _handle_research(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_chat.id != TELEGRAM_CHAT_ID:
+        return
+
+    msg = update.message
+    query = msg.text.replace("/research", "", 1).strip()
+    if not query:
+        await msg.reply_text("Please provide a topic. Example:\n/research Apple intelligence. I think they are playing it too safe.")
+        return
+
+    await msg.reply_text(f"researching: '{query}'...")
+    
+    # Run the blocking research_topic call in a separate thread so the bot doesn't freeze
+    story = await asyncio.to_thread(research_topic, query)
+    
+    update_state(
+        status="processing",
+        selected_story=story,
+        user_angle=query,
+        current_format="text",
+    )
+    
+    await msg.reply_text(PROCESSING)
+    await _generate_and_send_draft(msg, story, "text", query)
+
 
 async def _handle_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.id != TELEGRAM_CHAT_ID:

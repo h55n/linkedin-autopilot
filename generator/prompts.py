@@ -18,7 +18,16 @@ def build_text_post_prompt(story: dict, angle: str = None) -> str:
 
 ---
 
-TASK: Write a LinkedIn text post about the story below.
+TASK: Act as a world-class conversion copywriter. Synthesize the story and the user's angle into a highly engaging, thought-provoking narrative that provides unique value to the reader. 
+
+COPYWRITING RULES:
+- Clarity Over Cleverness: Be clear, direct, and easy to understand.
+- Benefits Over Features: Focus on what the news means for the reader's outcomes.
+- Simple over complex: Use simple verbs ("use" not "utilize").
+- Active over passive voice.
+- Show, don't tell: Describe outcomes rather than using adverbs.
+- Engage the reader: Use rhetorical questions or analogies when helpful.
+- Avoid sensationalism, buzzwords, and fluff. Provide real substance.
 
 STORY TITLE: {story['title']}
 STORY URL: {story.get('url', '')}
@@ -30,9 +39,9 @@ REGION: {story.get('region', 'global')}
 OUTPUT RULES:
 - Return ONLY the post text. No preamble, no "here's the post:", no quotes around it.
 - 2 to 4 very short paragraphs/sentences.
-- CRITICAL: Separate each sentence/paragraph with an empty line (double newline).
-- All lowercase, no em dashes, no exclamation marks.
-- Introduce the URL on its own line at the very end with a short, conversational cta (like "you can try this out:", "check it out here:", etc.) followed by the URL.
+- CRITICAL: Separate each sentence/paragraph with an empty line (double newline, \n\n) for proper alignment.
+- Follow the lowercase rule from PERSONALITY_PROMPT exactly, ensuring short-form acronyms (AI, AICT, API, etc.) are ALWAYS capitalized.
+- Introduce the URL on its own line at the very end. Vary the Call To Action naturally and conversationally (e.g., "Read this article to know more: ", "Dive deeper here: ", "Check out the full details: ", etc.) followed by the URL.
 """
 
 
@@ -108,7 +117,16 @@ def build_image_caption_prompt(story: dict, angle: str = None) -> str:
 
 ---
 
-TASK: Write a LinkedIn caption for an image pair post about the story below.
+TASK: Act as a world-class conversion copywriter. Write a highly engaging and insightful LinkedIn caption for an image pair post about the story below.
+
+COPYWRITING RULES:
+- Clarity Over Cleverness: Be clear, direct, and easy to understand.
+- Benefits Over Features: Focus on what the news means for the reader's outcomes.
+- Simple over complex: Use simple verbs ("use" not "utilize").
+- Active over passive voice.
+- Show, don't tell: Describe outcomes rather than using adverbs.
+- Engage the reader: Use rhetorical questions or analogies when helpful.
+- Avoid sensationalism, buzzwords, and fluff. Provide real substance.
 
 STORY TITLE: {story['title']}
 STORY URL: {story.get('url', '')}
@@ -118,10 +136,10 @@ STORY SUMMARY: {story.get('summary', '')}
 OUTPUT RULES:
 - Return ONLY the caption text. No preamble.
 - 2 to 3 very short paragraphs.
-- CRITICAL: Separate each paragraph with an empty line (double newline).
-- All lowercase, no em dashes, no exclamation marks.
+- CRITICAL: Separate each paragraph with an empty line (double newline, \n\n) for proper alignment.
+- Follow the lowercase rule from PERSONALITY_PROMPT exactly, ensuring short-form acronyms (AI, AICT, API, etc.) are ALWAYS capitalized.
 - Assume the reader might not look at the images — the caption must make sense alone.
-- Introduce the URL on its own line at the very end with a short, conversational cta (like "you can try this out:", "check it out here:", etc.) followed by the URL.
+- Introduce the URL on its own line at the very end. Vary the Call To Action naturally and conversationally (e.g., "Read this article to know more: ", "Dive deeper here: ", "Check out the full details: ", etc.) followed by the URL.
 """
 
 
@@ -145,6 +163,6 @@ URL: {story.get('url', '')}
 
 OUTPUT RULES:
 - Return ONLY the revised post text. No preamble.
-- Apply the edit instruction faithfully.
-- Keep all writing rules (lowercase, no em dashes, max 3 sentences for text posts).
+- Apply the edit instruction faithfully, thinking like a copywriter.
+- Keep all writing rules (mostly lowercase except for acronyms, no em dashes, max 3 sentences for text posts).
 """
