@@ -17,7 +17,13 @@ Local / Render (legacy fallback):
   - Set STATE_BACKEND=file (or leave unset) in .env for local mode.
 """
 
+import sys
 import asyncio
+
+# Fix Playwright asyncio subprocess error on Windows
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+
 import time
 import os
 from datetime import datetime
@@ -26,8 +32,8 @@ from apscheduler.triggers.cron import CronTrigger
 import pytz
 from aiohttp import web
 
-from config.settings import TIMEZONE, POST_TIME, SKIP_AFTER_MINUTES, RUN_NOW
-from utils.logger import get_logger, log_error, log_skip
+from config.settings import TIMEZONE, POST_TIME, SKIP_AFTER_MINUTES, RUN_NOW, AUTOPILOT_MODE
+from utils.logger import get_logger, log_error, log_skip, log_post, get_streak
 from utils.helpers import read_state, update_state, now_ist, canonical_url
 from telegram_bot.bot import build_application, send_message, send_reminder, handle_skip_timeout
 from scraper.scraper import scrape_all
@@ -78,6 +84,59 @@ async def main_pipeline():
         if not picks:
             log.warning("No picks after scoring")
             await send_message("scoring returned no picks. check logs/errors.log")
+            return
+
+        if AUTOPILOT_MODE:
+            log.info("AUTOPILOT_MODE is ON. Automatically generating and publishing top pick.")
+            story = picks[0]
+            format_type = story.get("format_suggestion", "text")
+            
+            from generator.generator import generate_post
+            from linkedin.poster import post_text_to_linkedin, post_carousel_to_linkedin, post_image_to_linkedin
+            from carousel.carousel_gen import generate_carousel_pdf
+            from telegram_bot.screenshotter import take_screenshots_for_story
+            
+            log.info(f"Auto-generating {format_type} post...")
+            try:
+                result = generate_post(story, post_type=format_type, angle=None)
+            except Exception as e:
+                log_error("Auto-generation failed", e)
+                await send_message(f"Autopilot generation failed: {e}")
+                return
+                
+            post_text = result.get("post_text", "")
+            carousel_data = result.get("carousel_data")
+            actual_format = result.get("post_type", format_type)
+            
+            log.info(f"Publishing {actual_format} post to LinkedIn...")
+            try:
+                if actual_format == "carousel":
+                    pdf_path = generate_carousel_pdf(carousel_data)
+                    headline = carousel_data.get("slides", [{}])[0].get("heading", story.get("title", ""))
+                    url = post_carousel_to_linkedin(pdf_path, post_text, headline)
+                elif actual_format == "image":
+                    paths = await take_screenshots_for_story(story)
+                    if paths and os.path.exists(paths[0]):
+                        url = post_image_to_linkedin(paths[0], post_text)
+                    else:
+                        log.warning("No screenshot found for image post, falling back to text post")
+                        url = post_text_to_linkedin(post_text)
+                else:
+                    url = post_text_to_linkedin(post_text)
+            except Exception as e:
+                log_error("Auto-publish failed", e)
+                await send_message(f"Autopilot publishing failed: {e}")
+                return
+                
+            log_post(
+                story=story,
+                format_type=actual_format,
+                post_text=post_text,
+                your_angle="[AUTOPILOT]",
+                linkedin_url=url,
+            )
+            update_state(status="posted", linkedin_url=url, date=today)
+            await send_message(f"Autopilot run complete. Published to LinkedIn:\n{url}")
             return
 
         # Step 4: Format morning brief
@@ -185,15 +244,6 @@ def build_scheduler() -> AsyncIOScheduler:
         replace_existing=True,
     )
 
-    # Skip job (2h after pipeline)
-    skip_minute = (post_minute + 120) % 60
-    skip_hour = post_hour + ((post_minute + 120) // 60)
-    scheduler.add_job(
-        check_skip,
-        CronTrigger(hour=skip_hour % 24, minute=skip_minute, timezone=tz),
-        id="skip_check",
-        replace_existing=True,
-    )
 
     # Token check job (daily at 06:00)
     scheduler.add_job(
@@ -250,6 +300,15 @@ async def run():
     # Start bot polling (this blocks until stopped)
     async with app:
         await app.initialize()
+
+        # Webhook Protection: Prevent accidental deletion of production webhooks
+        webhook_info = await app.bot.get_webhook_info()
+        if webhook_info.url:
+            log.warning(f"A webhook is currently active: {webhook_info.url}")
+            if os.getenv("FORCE_POLLING") != "true":
+                log.error("Aborting local polling to protect production webhook. Set FORCE_POLLING=true in .env to override.")
+                return
+
         await app.start()
         await app.updater.start_polling()
         log.info("Telegram bot polling started")
