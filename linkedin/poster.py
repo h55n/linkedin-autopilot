@@ -9,8 +9,8 @@ import time
 import requests
 from utils.logger import get_logger, log_error
 from config.settings import (
-    LINKEDIN_ACCESS_TOKEN, LINKEDIN_PERSON_URN, LINKEDIN_API_BASE,
-    LINKEDIN_TOKEN_WARNING_DAYS,
+    LINKEDIN_ACCESS_TOKEN, LINKEDIN_REFRESH_TOKEN, LINKEDIN_PERSON_URN, LINKEDIN_API_BASE,
+    LINKEDIN_TOKEN_WARNING_DAYS, LINKEDIN_CLIENT_ID, LINKEDIN_CLIENT_SECRET
 )
 from utils.helpers import read_state, update_state
 
@@ -228,15 +228,28 @@ def _upload_image(image_path: str) -> str:
 
 def _api_post(endpoint: str, payload: dict) -> dict:
     url = f"{LINKEDIN_API_BASE}{endpoint}"
+    
+    # We must read from os.environ to get the freshest token if it was just refreshed in memory
+    current_token = os.environ.get("LINKEDIN_ACCESS_TOKEN", LINKEDIN_ACCESS_TOKEN)
+    
     headers = {
-        "Authorization": f"Bearer {LINKEDIN_ACCESS_TOKEN}",
+        "Authorization": f"Bearer {current_token}",
         "Content-Type": "application/json",
         "X-Restli-Protocol-Version": "2.0.0",
     }
     resp = requests.post(url, json=payload, headers=headers, timeout=30)
 
     if resp.status_code == 401:
-        raise PermissionError("LinkedIn token expired or invalid — run scripts/refresh_linkedin_token.py")
+        log.warning("LinkedIn API returned 401. Attempting automatic token refresh...")
+        if _attempt_auto_refresh():
+            # Retry once
+            current_token = os.environ.get("LINKEDIN_ACCESS_TOKEN", LINKEDIN_ACCESS_TOKEN)
+            headers["Authorization"] = f"Bearer {current_token}"
+            resp = requests.post(url, json=payload, headers=headers, timeout=30)
+            
+    if resp.status_code == 401:
+        raise PermissionError("LinkedIn token expired and automatic refresh failed. Run scripts/refresh_linkedin_token.py")
+        
     resp.raise_for_status()
 
     try:
@@ -272,13 +285,52 @@ def _check_token_age() -> int:
         if days_old >= LINKEDIN_TOKEN_WARNING_DAYS:
             log.warning(
                 f"LinkedIn token is {days_old} days old — expires in "
-                f"{60 - days_old} days. Run scripts/refresh_linkedin_token.py"
+                f"{60 - days_old} days. Attempting automatic proactive refresh."
             )
+            if not _attempt_auto_refresh():
+                log.warning("Proactive refresh failed. You may need to run scripts/refresh_linkedin_token.py")
             return days_old
     except Exception as e:
         log.debug(f"Could not check token age: {e}")
 
     return 0
+
+def _attempt_auto_refresh() -> bool:
+    """Try to use the refresh token to get a new access token and save it."""
+    from linkedin.auth import refresh_access_token
+    from dotenv import set_key
+    
+    refresh_token = os.environ.get("LINKEDIN_REFRESH_TOKEN", LINKEDIN_REFRESH_TOKEN)
+    if not refresh_token or not LINKEDIN_CLIENT_ID or not LINKEDIN_CLIENT_SECRET:
+        log.warning("Cannot auto-refresh: missing refresh token or client credentials in .env")
+        return False
+        
+    try:
+        data = refresh_access_token(LINKEDIN_CLIENT_ID, LINKEDIN_CLIENT_SECRET, refresh_token)
+        new_access = data.get("access_token")
+        new_refresh = data.get("refresh_token")
+        
+        if not new_access:
+            return False
+            
+        env_file = ".env"
+        if not os.path.exists(env_file):
+            with open(env_file, "w") as f:
+                f.write("")
+                
+        set_key(env_file, "LINKEDIN_ACCESS_TOKEN", new_access)
+        os.environ["LINKEDIN_ACCESS_TOKEN"] = new_access
+        
+        if new_refresh:
+            set_key(env_file, "LINKEDIN_REFRESH_TOKEN", new_refresh)
+            os.environ["LINKEDIN_REFRESH_TOKEN"] = new_refresh
+            
+        record_token_date()
+        log.info("Successfully auto-refreshed LinkedIn token")
+        return True
+    except Exception as e:
+        log_error("Auto-refresh failed", e)
+        return False
 
 
 def record_token_date():

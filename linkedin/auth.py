@@ -38,13 +38,13 @@ class _CallbackHandler(BaseHTTPRequestHandler):
         pass  # suppress server logs
 
 
-def get_access_token(client_id: str = None, client_secret: str = None) -> str:
+def get_access_token(client_id: str = None, client_secret: str = None) -> dict:
     """
     Run the OAuth 2.0 PKCE flow:
     1. Open browser to LinkedIn auth page
     2. Capture redirect with auth code
     3. Exchange for access token
-    Returns the access token string.
+    Returns a dict with access_token and refresh_token.
     """
     global _auth_code
     _auth_code = None
@@ -70,7 +70,9 @@ def get_access_token(client_id: str = None, client_secret: str = None) -> str:
 
     print(f"\nOpening LinkedIn auth in browser...")
     print(f"If browser doesn't open, visit:\n{auth_url}\n")
-    webbrowser.open(auth_url)
+    import os
+    if not os.environ.get("HEADLESS_OAUTH_MODE"):
+        webbrowser.open(auth_url)
 
     # Spin up local server to catch callback
     server = HTTPServer(("localhost", 8080), _CallbackHandler)
@@ -97,10 +99,33 @@ def get_access_token(client_id: str = None, client_secret: str = None) -> str:
     token_data = token_resp.json()
 
     access_token = token_data.get("access_token", "")
+    refresh_token = token_data.get("refresh_token", "")
     expires_in = token_data.get("expires_in", 0)
 
     print(f"\n✓ Access token obtained (expires in {expires_in // 86400} days)")
-    return access_token
+    return {"access_token": access_token, "refresh_token": refresh_token}
+
+def refresh_access_token(client_id: str, client_secret: str, refresh_token: str) -> dict:
+    """
+    Use a refresh token to get a new access token.
+    Returns a dict with the new access_token and possibly a new refresh_token.
+    """
+    if not refresh_token:
+        raise ValueError("No refresh token provided")
+
+    token_resp = requests.post(
+        LINKEDIN_TOKEN_URL,
+        data={
+            "grant_type": "refresh_token",
+            "refresh_token": refresh_token,
+            "client_id": client_id,
+            "client_secret": client_secret,
+        },
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        timeout=30,
+    )
+    token_resp.raise_for_status()
+    return token_resp.json()
 
 
 def get_person_urn(access_token: str) -> str:

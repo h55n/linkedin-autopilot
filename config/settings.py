@@ -19,12 +19,16 @@ NVIDIA_NIM_API_KEY = os.getenv("NVIDIA_NIM_API_KEY", "")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = int(os.getenv("TELEGRAM_CHAT_ID") or "0")
 LINKEDIN_ACCESS_TOKEN = os.getenv("LINKEDIN_ACCESS_TOKEN", "")
+LINKEDIN_REFRESH_TOKEN = os.getenv("LINKEDIN_REFRESH_TOKEN", "")
+LINKEDIN_CLIENT_ID = os.getenv("LINKEDIN_CLIENT_ID", "")
+LINKEDIN_CLIENT_SECRET = os.getenv("LINKEDIN_CLIENT_SECRET", "")
 LINKEDIN_PERSON_URN = os.getenv("LINKEDIN_PERSON_URN", "")
 REDDIT_CLIENT_ID = os.getenv("REDDIT_CLIENT_ID", "")
 REDDIT_CLIENT_SECRET = os.getenv("REDDIT_CLIENT_SECRET", "")
 REDDIT_USER_AGENT = os.getenv("REDDIT_USER_AGENT", "linkedin-autopilot/1.0")
 RUN_NOW = os.getenv("RUN_NOW", "false").lower() == "true"
 POST_TIME = os.getenv("POST_TIME", "07:00")
+AUTOPILOT_MODE = os.getenv("AUTOPILOT_MODE", "false").lower() == "true"
 
 # ─────────────────────────────────────────────────────────────────
 # SCHEDULER
@@ -270,7 +274,7 @@ WHAT THEY THINK IS NOISE
 - drama, lawsuits, celebrity tech unless there's a real technical angle
 
 WRITING RULES — ABSOLUTE. NEVER BREAK THESE.
-1. all lowercase. every word. no exceptions for proper nouns. EXCEPT: short-form acronyms (like ECC, MIT, AI, API) MUST remain in ALL CAPS.
+1. all lowercase. every word. no exceptions for proper nouns. CRITICAL EXCEPTION: ALL short-form acronyms and abbreviations (like AI, API, LLM, UI, UX, SaaS, ML) MUST BE STRICTLY CAPITALIZED.
 2. no em dashes (—). if you feel like using one, use a comma or a period instead.
 3. no corporate speak. banned words: game-changer, revolutionary, exciting,
    disruptive, groundbreaking, innovative, paradigm, ecosystem (unless quoting),

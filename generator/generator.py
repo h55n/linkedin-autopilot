@@ -8,6 +8,7 @@ import json
 import re
 import httpx
 from groq import Groq
+from tenacity import retry, stop_after_attempt, wait_exponential
 from utils.logger import get_logger, log_error
 from utils.helpers import age_label, format_source_label, format_score_label, emoji_for_story
 from generator.prompts import (
@@ -147,6 +148,35 @@ def _generate_image_caption(story: dict, angle: str = None) -> dict:
         "intro_text": None,
     }
 
+import json
+
+def parse_pick_with_llm(text: str, picks: list[dict]) -> tuple[int, str | None] | None:
+    """Use LLM to parse natural language intent into a specific story choice."""
+    try:
+        from generator.prompts import build_intent_parser_prompt
+        prompt = build_intent_parser_prompt(text, picks)
+        raw = _call_llm(prompt, max_tokens=150)
+        
+        # Clean up possible markdown in response
+        if raw.startswith("```json"):
+            raw = raw.replace("```json", "", 1)
+        if raw.endswith("```"):
+            raw = raw[:-3]
+        raw = raw.strip()
+
+        data = json.loads(raw)
+        
+        story_num = data.get("story_num")
+        angle = data.get("angle")
+        
+        if story_num is None or not isinstance(story_num, int):
+            return None
+            
+        return int(story_num), (str(angle) if angle else None)
+    except Exception as e:
+        log_error("Failed to parse pick with LLM", e)
+        return None
+
 
 def _generate_carousel(story: dict, angle: str = None) -> dict:
     prompt = build_carousel_prompt(story, angle)
@@ -182,8 +212,9 @@ def _generate_carousel(story: dict, angle: str = None) -> dict:
 # GROQ API CALL
 # ─────────────────────────────────────────────────────────────────
 
+@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
 def _call_mistral(prompt: str, max_tokens: int = 600) -> str:
-    """Call Mistral LLM and return the text response."""
+    """Call Mistral LLM and return the text response. Retries on failure."""
     if not MISTRAL_API_KEY:
         raise ValueError("Mistral API key not configured")
         
@@ -197,16 +228,18 @@ def _call_mistral(prompt: str, max_tokens: int = 600) -> str:
                 "temperature": GROQ_TEMPERATURE,
                 "max_tokens": max_tokens,
             },
-            timeout=10.0
+            timeout=15.0
         )
         response.raise_for_status()
         return response.json()["choices"][0]["message"]["content"].strip()
     except Exception as e:
+        log_error("Mistral API call failed", e)
         raise
 
 
+@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
 def _call_groq(prompt: str, max_tokens: int = 600) -> str:
-    """Call Groq LLM and return the text response."""
+    """Call Groq LLM and return the text response. Retries on failure."""
     try:
         completion = client.chat.completions.create(
             model=GROQ_MODEL,
@@ -220,8 +253,9 @@ def _call_groq(prompt: str, max_tokens: int = 600) -> str:
         raise
 
 
+@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
 def _call_nvidia(prompt: str, max_tokens: int = 600) -> str:
-    """Call Nvidia NIM LLM and return the text response."""
+    """Call Nvidia NIM LLM and return the text response. Retries on failure."""
     if not NVIDIA_NIM_API_KEY:
         raise ValueError("NVIDIA NIM API key not configured")
         
@@ -235,11 +269,12 @@ def _call_nvidia(prompt: str, max_tokens: int = 600) -> str:
                 "temperature": GROQ_TEMPERATURE,
                 "max_tokens": max_tokens,
             },
-            timeout=10.0
+            timeout=15.0
         )
         response.raise_for_status()
         return response.json()["choices"][0]["message"]["content"].strip()
     except Exception as e:
+        log_error("Nvidia API call failed", e)
         raise
 
 

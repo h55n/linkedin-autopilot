@@ -16,6 +16,10 @@ import sys
 import time
 from datetime import datetime, timedelta
 
+# Fix Playwright asyncio subprocess error on Windows
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+
 # Make sure project root is on the path when run as a script
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 

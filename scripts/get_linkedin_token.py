@@ -37,7 +37,9 @@ def main():
 
     print("\nStarting OAuth flow...")
     try:
-        token = get_access_token(client_id, client_secret)
+        token_data = get_access_token(client_id, client_secret)
+        token = token_data.get("access_token")
+        refresh_token = token_data.get("refresh_token")
         urn = get_person_urn(token)
 
         print(f"\n✓ Access token: {token[:20]}...")
@@ -49,6 +51,9 @@ def main():
                 f.write("")
 
         set_key(ENV_FILE, "LINKEDIN_ACCESS_TOKEN", token)
+        if refresh_token:
+            set_key(ENV_FILE, "LINKEDIN_REFRESH_TOKEN", refresh_token)
+            print("✓ Refresh token saved")
         set_key(ENV_FILE, "LINKEDIN_PERSON_URN", urn)
 
         # Record token date for expiry tracking

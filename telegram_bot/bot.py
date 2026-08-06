@@ -90,9 +90,21 @@ async def _handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _handle_voice(msg, state, context)
         return
 
-    text = (msg.text or "").strip()
+    text = (msg.text or msg.caption or "").strip()
     if not text:
         return
+
+    # Handle photo download if present
+    custom_image_path = None
+    if msg.photo:
+        try:
+            os.makedirs("carousel/output", exist_ok=True)
+            custom_image_path = "carousel/output/custom_image.jpg"
+            photo_file = await msg.photo[-1].get_file()
+            await photo_file.download_to_drive(custom_image_path)
+        except Exception as e:
+            log_error("Failed to download custom image", e)
+            custom_image_path = None
 
     text_lower = text.lower()
 
@@ -113,10 +125,10 @@ async def _handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # ── State: waiting for story pick ────────────────────────────
 
     if current_status in ("waiting", "reminder_sent"):
-        parsed = _parse_pick(text)
+        picks = state.get("picks", [])
+        parsed = _parse_pick(text, picks)
         if parsed:
             story_num, angle = parsed
-            picks = state.get("picks", [])
 
             if story_num < 1 or story_num > len(picks):
                 await msg.reply_text(f"pick a number between 1 and {len(picks)}")
@@ -130,6 +142,7 @@ async def _handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 selected_story=story,
                 user_angle=angle,
                 current_format=format_type,
+                custom_image=custom_image_path,
             )
 
             await msg.reply_text(PROCESSING)
@@ -255,26 +268,39 @@ async def _generate_and_send_draft(msg, story: dict, format_type: str, angle: st
 
     # If image format — take screenshots automatically and send them
     if actual_format == "image":
-        await msg.reply_text("taking screenshots of the url...")
-        try:
-            screenshot_paths = await take_screenshots_for_story(story)
-            if screenshot_paths:
-                update_state(current_screenshot_paths=screenshot_paths)
-                bot = Bot(token=TELEGRAM_BOT_TOKEN)
-                for path in screenshot_paths:
-                    with open(path, "rb") as f:
-                        await bot.send_photo(
-                            chat_id=msg.chat.id,
-                            photo=f,
-                            caption="screenshot captured automatically — attach this when posting on linkedin.",
-                        )
-            else:
+        from utils.helpers import read_state
+        state = read_state()
+        custom_image = state.get("custom_image")
+        if custom_image and os.path.exists(custom_image):
+            await msg.reply_text("using your custom image...")
+            bot = Bot(token=TELEGRAM_BOT_TOKEN)
+            with open(custom_image, "rb") as f:
+                await bot.send_photo(
+                    chat_id=msg.chat.id,
+                    photo=f,
+                    caption="custom image received — attach this when posting on linkedin."
+                )
+        else:
+            await msg.reply_text("taking screenshots of the url...")
+            try:
+                screenshot_paths = await take_screenshots_for_story(story)
+                if screenshot_paths:
+                    update_state(current_screenshot_paths=screenshot_paths)
+                    bot = Bot(token=TELEGRAM_BOT_TOKEN)
+                    for path in screenshot_paths:
+                        with open(path, "rb") as f:
+                            await bot.send_photo(
+                                chat_id=msg.chat.id,
+                                photo=f,
+                                caption="screenshot captured automatically — attach this when posting on linkedin.",
+                            )
+                else:
+                    instruction = f"screenshot of {story.get('url', 'the tool')}"
+                    await msg.reply_text(IMAGE_INSTRUCTION.format(screenshot_instruction=instruction))
+            except Exception as e:
+                log.warning(f"Auto-screenshot failed: {e}")
                 instruction = f"screenshot of {story.get('url', 'the tool')}"
                 await msg.reply_text(IMAGE_INSTRUCTION.format(screenshot_instruction=instruction))
-        except Exception as e:
-            log.warning(f"Auto-screenshot failed: {e}")
-            instruction = f"screenshot of {story.get('url', 'the tool')}"
-            await msg.reply_text(IMAGE_INSTRUCTION.format(screenshot_instruction=instruction))
 
 
 async def _regenerate_with_edit(msg, story: dict, format_type: str,
@@ -315,8 +341,12 @@ async def _publish(msg, state: dict, story: dict, format_type: str, post_text: s
             headline = carousel_data.get("slides", [{}])[0].get("heading", story.get("title", ""))
             url = post_carousel_to_linkedin(pdf_path, post_text, headline)
         elif format_type == "image":
+            custom_image = state.get("custom_image")
             paths = state.get("current_screenshot_paths", [])
-            if paths and os.path.exists(paths[0]):
+            
+            if custom_image and os.path.exists(custom_image):
+                url = post_image_to_linkedin(custom_image, post_text)
+            elif paths and os.path.exists(paths[0]):
                 url = post_image_to_linkedin(paths[0], post_text)
             else:
                 log.warning("No screenshot found for image post, falling back to text post")
@@ -423,18 +453,36 @@ async def _handle_log(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # PARSING
 # ─────────────────────────────────────────────────────────────────
 
-def _parse_pick(text: str) -> tuple[int, str | None] | None:
+def _parse_pick(text: str, picks: list[dict]) -> tuple[int, str] | None:
     """
-    Parse story pick from user text.
-    Formats: "2", "2 here's my take", "2, here's my take", "2. take"
-    Returns (story_number, angle_text_or_None) or None if not a pick.
+    Parse the user's response to identify which story they picked (1, 2, or 3)
+    and extract any custom instructions/angle.
+    
+    First tries strict regex, then format keyword matching, then LLM fallback.
     """
-    text = text.strip()
-    # Match: digit optionally followed by separator and text
-    match = re.match(r'^([123])[,.\s]?\s*(.*)?$', text, re.DOTALL)
-    if not match:
-        return None
+    text_lower = text.lower().strip()
+    
+    match = re.match(r'^([123])[,.\s]?\s*(.*)?$', text_lower)
+    if match:
+        story_num = int(match.group(1))
+        angle = match.group(2).lstrip("+-\\_ ").strip() if match.group(2) else None
+        if not angle:
+            angle = None
+        return story_num, angle
 
-    num = int(match.group(1))
-    angle = match.group(2).strip() if match.group(2) else None
-    return num, angle or None
+    # Keyword match for formats (e.g., "image", "carousel", "text")
+    format_keywords = ["image", "carousel", "text"]
+    for keyword in format_keywords:
+        if text_lower == keyword or text_lower == f"the {keyword} one" or text_lower == f"{keyword} one":
+            for i, p in enumerate(picks):
+                if p.get("format_suggestion") == keyword:
+                    return i + 1, None
+
+    try:
+        from generator.generator import parse_pick_with_llm
+        return parse_pick_with_llm(text, picks)
+    except Exception as e:
+        from utils.logger import get_logger
+        log = get_logger("bot")
+        log.error(f"LLM parsing fallback failed: {e}")
+        return None
