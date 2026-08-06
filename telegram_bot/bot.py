@@ -108,6 +108,11 @@ async def _handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     text_lower = text.lower()
 
+    # If already processing or publishing, ignore concurrent retry updates
+    if current_status in ("processing", "publishing"):
+        log.info(f"Ignoring message because status is '{current_status}'")
+        return
+
     # ── Commands that work in any state ──────────────────────────
 
     if text_lower == "skip":

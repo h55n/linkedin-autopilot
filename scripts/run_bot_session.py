@@ -43,6 +43,8 @@ async def run_single_update():
     done_event = asyncio.Event()
 
     async def mark_done(u, c):
+        if hasattr(c, "error") and c.error:
+            log.error(f"Error handling update: {c.error}", exc_info=c.error)
         done_event.set()
 
     # Group 999 guarantees this runs last (unless an exception stops propagation)
