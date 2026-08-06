@@ -91,8 +91,12 @@ if __name__ == "__main__":
                 ),
             )
             page = await context.new_page()
-            await page.goto(url_arg, wait_until="domcontentloaded", timeout=25000)
-            await page.wait_for_timeout(2000)
+            try:
+                await page.goto(url_arg, wait_until="domcontentloaded", timeout=25000)
+            except Exception as e:
+                # Even if goto times out, try to take a screenshot of whatever loaded
+                print(f"Playwright warning: goto timed out or failed: {e}", file=sys.stderr)
+            await page.wait_for_timeout(3000)
 
             for selector in [
                 "[class*='cookie'] button",

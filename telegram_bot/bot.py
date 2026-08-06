@@ -128,14 +128,18 @@ async def _handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         picks = state.get("picks", [])
         parsed = _parse_pick(text, picks)
         if parsed:
-            story_num, angle = parsed
+            if len(parsed) == 2:
+                story_num, angle = parsed
+                format_override = None
+            else:
+                story_num, angle, format_override = parsed
 
             if story_num < 1 or story_num > len(picks):
                 await msg.reply_text(f"pick a number between 1 and {len(picks)}")
                 return
 
             story = picks[story_num - 1]
-            format_type = story.get("format_suggestion", "text")
+            format_type = format_override or story.get("format_suggestion", "text")
 
             update_state(
                 status="processing",
@@ -453,7 +457,7 @@ async def _handle_log(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # PARSING
 # ─────────────────────────────────────────────────────────────────
 
-def _parse_pick(text: str, picks: list[dict]) -> tuple[int, str] | None:
+def _parse_pick(text: str, picks: list[dict]) -> tuple[int, str|None, str|None] | None:
     """
     Parse the user's response to identify which story they picked (1, 2, or 3)
     and extract any custom instructions/angle.
@@ -466,9 +470,15 @@ def _parse_pick(text: str, picks: list[dict]) -> tuple[int, str] | None:
     if match:
         story_num = int(match.group(1))
         angle = match.group(2).lstrip("+-\\_ ").strip() if match.group(2) else None
-        if not angle:
+        
+        format_override = None
+        if angle in ("image", "carousel", "text"):
+            format_override = angle
             angle = None
-        return story_num, angle
+        elif not angle:
+            angle = None
+            
+        return story_num, angle, format_override
 
     # Keyword match for formats (e.g., "image", "carousel", "text")
     format_keywords = ["image", "carousel", "text"]
@@ -476,11 +486,13 @@ def _parse_pick(text: str, picks: list[dict]) -> tuple[int, str] | None:
         if text_lower == keyword or text_lower == f"the {keyword} one" or text_lower == f"{keyword} one":
             for i, p in enumerate(picks):
                 if p.get("format_suggestion") == keyword:
-                    return i + 1, None
+                    return i + 1, None, None
 
     try:
         from generator.generator import parse_pick_with_llm
-        return parse_pick_with_llm(text, picks)
+        result = parse_pick_with_llm(text, picks)
+        if result:
+            return result[0], result[1], None
     except Exception as e:
         from utils.logger import get_logger
         log = get_logger("bot")
