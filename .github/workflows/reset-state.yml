@@ -1,0 +1,31 @@
+name: Reset State (Manual)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  reset:
+    name: Reset Gist state to idle
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    env:
+      STATE_BACKEND: gist
+      GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
+      GIST_ID: ${{ secrets.GIST_ID }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Reset Gist state to idle
+        run: python scripts/reset_gist_state.py
