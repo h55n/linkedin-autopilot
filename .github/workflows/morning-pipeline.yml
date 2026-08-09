@@ -6,17 +6,15 @@ permissions:
 
 on:
   schedule:
-    # 04:30 AM IST = 23:00 UTC
-    # We trigger 2.5 hours early to bypass GitHub Actions' chronic scheduling delays.
-    # The python script will deliberately sleep and wake up exactly at 07:00 AM IST.
-    - cron: '0 23 * * *'
+    # 07:00 AM IST = 01:30 UTC
+    - cron: '30 1 * * *'
   workflow_dispatch:
 
 jobs:
   pipeline:
     name: Scrape → Score → Generate → Send Brief
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 15
 
     env:
       STATE_BACKEND: gist

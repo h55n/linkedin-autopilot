@@ -20,9 +20,26 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from telegram import Update
 from telegram.ext import TypeHandler
 from utils.logger import get_logger
-from telegram_bot.bot import build_application
+from telegram_bot.bot import build_application, send_message
 
 log = get_logger("bot_session")
+
+def _parse_payload(payload_str: str) -> dict | None:
+    """Safely parse JSON payload, unwrapping nested body or stringified JSON if needed."""
+    try:
+        data = json.loads(payload_str)
+        if isinstance(data, str):
+            # Double-encoded string
+            data = json.loads(data)
+        if isinstance(data, dict) and "body" in data:
+            if isinstance(data["body"], str):
+                data = json.loads(data["body"])
+            elif isinstance(data["body"], dict):
+                data = data["body"]
+        return data if isinstance(data, dict) else None
+    except Exception as e:
+        log.warning(f"Payload parsing warning: {e}")
+        return None
 
 async def run_single_update():
     """
@@ -37,6 +54,12 @@ async def run_single_update():
 
     log.info("=== GitHub Actions: bot session (webhook) starting ===")
     
+    data = _parse_payload(payload_str)
+    if not data:
+        log.error("Failed to parse valid JSON dict from TELEGRAM_PAYLOAD. Exiting.")
+        await send_message("Failed to process webhook: invalid payload JSON format.")
+        return
+
     app = build_application()
     
     # We use an asyncio.Event to keep the script running until processing finishes
@@ -56,9 +79,25 @@ async def run_single_update():
     await app.start()
     
     try:
-        data = json.loads(payload_str)
+        # If payload missing update_id, synthesize one
+        if "update_id" not in data and "message" in data:
+            data["update_id"] = 1
+        elif "update_id" not in data and "text" in data:
+            # Synthetic simple update
+            chat_id = data.get("chat_id") or int(os.getenv("TELEGRAM_CHAT_ID", "0"))
+            data = {
+                "update_id": 1,
+                "message": {
+                    "message_id": 1,
+                    "date": 1700000000,
+                    "chat": {"id": chat_id, "type": "private"},
+                    "from": {"id": chat_id, "is_bot": False, "first_name": "User"},
+                    "text": data.get("text", ""),
+                }
+            }
+
         update = Update.de_json(data, app.bot)
-        log.info(f"Processing update_id: {update.update_id}")
+        log.info(f"Processing update_id: {getattr(update, 'update_id', 'unknown')}")
         
         # Queue the update
         await app.process_update(update)
@@ -69,10 +108,12 @@ async def run_single_update():
         except asyncio.TimeoutError:
             log.error("Timeout waiting for update to finish processing.")
             
-    except json.JSONDecodeError as e:
-        log.error(f"Failed to parse TELEGRAM_PAYLOAD JSON: {e}")
     except Exception as e:
-        log.error(f"Error processing update: {e}")
+        log.error(f"Error processing update: {e}", exc_info=True)
+        try:
+            await send_message(f"Error processing message update: {e}")
+        except Exception:
+            pass
     finally:
         await app.stop()
         await app.shutdown()

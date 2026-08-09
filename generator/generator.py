@@ -4,6 +4,7 @@ All LLM calls go through here. Uses Groq API.
 Handles text posts, carousel JSON, image captions, and morning brief formatting.
 """
 
+import os
 import json
 import re
 import httpx
@@ -26,7 +27,16 @@ from config.settings import (
 from scraper.enricher import enrich_story
 
 log = get_logger("generator")
-client = Groq(api_key=GROQ_API_KEY)
+_groq_client = None
+
+def _get_groq_client():
+    global _groq_client
+    if _groq_client is None:
+        key = GROQ_API_KEY or os.getenv("GROQ_API_KEY", "")
+        if not key:
+            raise ValueError("GROQ_API_KEY is not set in environment")
+        _groq_client = Groq(api_key=key)
+    return _groq_client
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -212,7 +222,15 @@ def _generate_carousel(story: dict, angle: str = None) -> dict:
 # GROQ API CALL
 # ─────────────────────────────────────────────────────────────────
 
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
+def _should_retry_http_error(retry_state):
+    """Do not retry if exception is a 401/403 HTTPStatusError."""
+    if retry_state.outcome and retry_state.outcome.failed:
+        exc = retry_state.outcome.exception()
+        if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code in (401, 403):
+            return False
+    return True
+
+@retry(stop=stop_after_attempt(2), wait=wait_exponential(multiplier=1, min=1, max=4), retry=_should_retry_http_error)
 def _call_mistral(prompt: str, max_tokens: int = 600) -> str:
     """Call Mistral LLM and return the text response. Retries on failure."""
     if not MISTRAL_API_KEY:
@@ -228,7 +246,7 @@ def _call_mistral(prompt: str, max_tokens: int = 600) -> str:
                 "temperature": GROQ_TEMPERATURE,
                 "max_tokens": max_tokens,
             },
-            timeout=15.0
+            timeout=7.0
         )
         response.raise_for_status()
         return response.json()["choices"][0]["message"]["content"].strip()
@@ -237,11 +255,12 @@ def _call_mistral(prompt: str, max_tokens: int = 600) -> str:
         raise
 
 
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
+@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=4))
 def _call_groq(prompt: str, max_tokens: int = 600) -> str:
     """Call Groq LLM and return the text response. Retries on failure."""
     try:
-        completion = client.chat.completions.create(
+        groq_c = _get_groq_client()
+        completion = groq_c.chat.completions.create(
             model=GROQ_MODEL,
             messages=[{"role": "user", "content": prompt}],
             temperature=GROQ_TEMPERATURE,
@@ -253,7 +272,7 @@ def _call_groq(prompt: str, max_tokens: int = 600) -> str:
         raise
 
 
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
+@retry(stop=stop_after_attempt(2), wait=wait_exponential(multiplier=1, min=1, max=4), retry=_should_retry_http_error)
 def _call_nvidia(prompt: str, max_tokens: int = 600) -> str:
     """Call Nvidia NIM LLM and return the text response. Retries on failure."""
     if not NVIDIA_NIM_API_KEY:
@@ -269,7 +288,7 @@ def _call_nvidia(prompt: str, max_tokens: int = 600) -> str:
                 "temperature": GROQ_TEMPERATURE,
                 "max_tokens": max_tokens,
             },
-            timeout=15.0
+            timeout=7.0
         )
         response.raise_for_status()
         return response.json()["choices"][0]["message"]["content"].strip()
@@ -318,6 +337,14 @@ def _parse_carousel_json(raw: str) -> dict | None:
     raw = re.sub(r"```\s*", "", raw)
     raw = raw.strip()
 
+    # Try to find JSON object within the text
+    match = re.search(r'\{.*\}', raw, re.DOTALL)
+    if match:
+        raw = match.group()
+
+    # Remove trailing commas before closing braces/brackets (common LLM mistake)
+    raw = re.sub(r',\s*([\]}])', r'\1', raw)
+
     try:
         data = json.loads(raw)
         # Validate structure
@@ -327,12 +354,7 @@ def _parse_carousel_json(raw: str) -> dict | None:
             if "heading" not in slide:
                 return None
         return data
-    except json.JSONDecodeError:
-        # Try to find JSON object within the text
-        match = re.search(r'\{.*\}', raw, re.DOTALL)
-        if match:
-            try:
-                return json.loads(match.group())
-            except json.JSONDecodeError:
-                pass
+    except json.JSONDecodeError as e:
+        import logging
+        logging.getLogger("generator").debug(f"JSON decode failed: {e}. Raw text was: {raw[:100]}...")
         return None

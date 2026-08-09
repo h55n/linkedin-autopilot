@@ -63,9 +63,11 @@ async def main_pipeline():
 
     # Don't run twice on the same day
     today = now_ist().strftime("%Y-%m-%d")
-    if state.get("date") == today and state.get("status") not in ("idle", None, "skipped", "posted", "cancelled"):
+    if state.get("date") == today and state.get("status") not in ("idle", None, "skipped", "posted", "cancelled", "failed"):
         log.info(f"Pipeline already ran today ({state.get('status')}) — skipping")
         return
+
+    update_state(status="processing", date=today)
 
     try:
         # Step 1: Scrape
@@ -75,6 +77,7 @@ async def main_pipeline():
         if not stories:
             log.warning("No stories scraped — skipping today")
             await send_message("no stories found today. check logs/errors.log")
+            update_state(status="failed", date=today)
             return
 
         # Step 2 & 3: Score and rank
@@ -84,6 +87,7 @@ async def main_pipeline():
         if not picks:
             log.warning("No picks after scoring")
             await send_message("scoring returned no picks. check logs/errors.log")
+            update_state(status="failed", date=today)
             return
 
         if AUTOPILOT_MODE:
@@ -102,6 +106,7 @@ async def main_pipeline():
             except Exception as e:
                 log_error("Auto-generation failed", e)
                 await send_message(f"Autopilot generation failed: {e}")
+                update_state(status="failed", date=today)
                 return
                 
             post_text = result.get("post_text", "")
@@ -126,6 +131,7 @@ async def main_pipeline():
             except Exception as e:
                 log_error("Auto-publish failed", e)
                 await send_message(f"Autopilot publishing failed: {e}")
+                update_state(status="failed", date=today)
                 return
                 
             log_post(
@@ -174,6 +180,11 @@ async def main_pipeline():
             await send_message(f"pipeline error — check logs/errors.log\n{str(e)[:200]}")
         except Exception:
             pass
+    finally:
+        current_state = read_state()
+        if current_state.get("status") == "processing":
+            log.warning("Pipeline exited while still in processing state — resetting status to failed")
+            update_state(status="failed")
 
 
 async def check_reminder():

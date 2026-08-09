@@ -11,7 +11,17 @@ from utils.logger import get_logger, log_error
 from config.settings import GROQ_API_KEY, GROQ_WHISPER_MODEL, TELEGRAM_BOT_TOKEN
 
 log = get_logger("voice_handler")
-client = Groq(api_key=GROQ_API_KEY)
+_client = None
+
+
+def _get_groq_client():
+    global _client
+    if _client is None:
+        key = GROQ_API_KEY or os.getenv("GROQ_API_KEY", "")
+        if not key:
+            raise ValueError("GROQ_API_KEY is not set in environment")
+        _client = Groq(api_key=key)
+    return _client
 
 
 def transcribe_voice(file_id: str) -> str | None:
@@ -75,6 +85,7 @@ def _download_voice(file_id: str) -> str | None:
 
 def _transcribe_file(file_path: str) -> str:
     """Send audio file to Groq Whisper for transcription."""
+    client = _get_groq_client()
     with open(file_path, "rb") as f:
         transcription = client.audio.transcriptions.create(
             file=(os.path.basename(file_path), f, "audio/ogg"),

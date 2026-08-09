@@ -6,6 +6,12 @@ Uses a subprocess to isolate the Playwright event loop from python-telegram-bot'
 
 import os
 import sys
+
+# Ensure project root is on sys.path whether imported as a module OR run as a subprocess
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, _PROJECT_ROOT)
+
 import asyncio
 import subprocess
 from utils.logger import get_logger

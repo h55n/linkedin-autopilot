@@ -183,6 +183,25 @@ BENCHMARK_KEYWORDS = [
     "faster", "cheaper", "score", "eval", "evaluation",
 ]
 
+# Keywords that identify a Tool / Agent / AI System story (Slot 1)
+TOOL_STORY_KEYWORDS = [
+    "agent", "sdk", "framework", "library", "plugin", "extension",
+    "open source", "open-source", "github", "release", "launch",
+    "launched", "introducing", "v1", "v2", "v3", "beta", "api",
+    "model", "inference", "self-hosted", "local model", "on-device",
+    "fine-tune", "rag", "pipeline", "workflow", "copilot", "assistant",
+]
+
+# Keywords that identify an active Hackathon story (Slot 2)
+# Noise patterns (recap/tips/strategy) are already handled by NOISE_KEYWORDS
+HACKATHON_KEYWORDS = [
+    "hackathon", "hack event", "buildathon", "ideathon", "datathon",
+    "code jam", "codejam", "code sprint", "codesprint", "mlh",
+    "applications open", "register now", "registration open",
+    "prizes worth", "prize pool", "win up to", "open for registration",
+    "submit your", "deadline", "last date to apply",
+]
+
 # ─────────────────────────────────────────────────────────────────
 # LINKEDIN
 # ─────────────────────────────────────────────────────────────────

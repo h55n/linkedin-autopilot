@@ -9,7 +9,7 @@ import os
 import traceback
 from datetime import date, datetime
 from config.settings import DAILY_LOG_FILE, ERROR_LOG_FILE
-from utils.helpers import read_state, update_state
+from utils.helpers import read_state, update_state, atomic_write_json
 
 # ── Python standard logger ────────────────────────────────────────
 
@@ -28,8 +28,7 @@ def get_logger(name: str) -> logging.Logger:
 def _ensure_file(path: str, default):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     if not os.path.exists(path):
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(default, f, indent=2)
+        atomic_write_json(path, default)
 
 
 def _read_json(path: str, default):
@@ -42,9 +41,13 @@ def _read_json(path: str, default):
 
 
 def _write_json(path: str, data):
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
+    atomic_write_json(path, data)
+
+
+def log_daily_summary(summary_data: dict | list):
+    """Write daily summary log using atomic_write_json."""
+    atomic_write_json(DAILY_LOG_FILE, summary_data)
+
 
 
 # ── Daily log ─────────────────────────────────────────────────────

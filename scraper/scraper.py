@@ -4,6 +4,7 @@ Orchestrates all source scrapers and returns a single deduplicated list.
 Each source failure is isolated — one bad source never crashes the pipeline.
 """
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from utils.logger import get_logger, log_error
 from scraper.sources.hackernews import scrape_hackernews
 from scraper.sources.reddit import scrape_reddit
@@ -17,7 +18,7 @@ log = get_logger("scraper")
 
 def scrape_all() -> list[dict]:
     """
-    Run all scrapers, merge results, deduplicate.
+    Run all scrapers concurrently in parallel, merge results, deduplicate.
     Returns a flat list of story dicts ready for scoring.
     """
     all_stories: list[dict] = []
@@ -30,14 +31,21 @@ def scrape_all() -> list[dict]:
         ("GitHub Trending", scrape_github_trending),
     ]
 
-    for name, scraper_fn in sources:
-        try:
-            stories = scraper_fn()
-            all_stories.extend(stories)
-            log.info(f"{name}: +{len(stories)} (total so far: {len(all_stories)})")
-        except Exception as e:
-            log_error(f"Scraper '{name}' failed", e)
-            log.warning(f"{name} scraper failed — continuing without it")
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        future_to_source = {
+            executor.submit(scraper_fn): name
+            for name, scraper_fn in sources
+        }
+
+        for future in as_completed(future_to_source):
+            name = future_to_source[future]
+            try:
+                stories = future.result()
+                all_stories.extend(stories)
+                log.info(f"{name}: +{len(stories)} (total so far: {len(all_stories)})")
+            except Exception as e:
+                log_error(f"Scraper '{name}' failed", e)
+                log.warning(f"{name} scraper failed — continuing without it")
 
     deduped = deduplicate(all_stories)
     log.info(f"scrape_all complete: {len(deduped)} unique stories")

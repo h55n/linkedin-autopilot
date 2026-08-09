@@ -4,6 +4,7 @@ Pure scoring function — no external calls, runs instantly.
 Takes a list of story dicts, returns the top 3 ranked + annotated.
 """
 
+import re
 from utils.logger import get_logger
 from utils.helpers import timestamp_to_age_hours
 from config.settings import (
@@ -13,15 +14,38 @@ from config.settings import (
     COMMENT_HIGH_THRESHOLD, COMMENT_MID_THRESHOLD, NOISE_PENALTY,
     INDIA_KEYWORDS, AI_KEYWORDS, BOOST_KEYWORDS, NOISE_KEYWORDS,
     TOOL_LAUNCH_KEYWORDS, BENCHMARK_KEYWORDS, OPPORTUNITY_BONUS,
-    OPPORTUNITY_KEYWORDS, TIER1_OPPORTUNITY_BONUS, TIER1_COMPANY_KEYWORDS
+    OPPORTUNITY_KEYWORDS, TIER1_OPPORTUNITY_BONUS, TIER1_COMPANY_KEYWORDS,
+    HACKATHON_KEYWORDS, TOOL_STORY_KEYWORDS,
 )
 
 log = get_logger("scorer")
 
 
+def _match_keyword(kw: str, text: str) -> bool:
+    """Check if keyword matches as a full word in text using word boundaries."""
+    return bool(re.search(r"\b" + re.escape(kw) + r"\b", text, re.IGNORECASE))
+
+
+def _has_any_keyword(text: str, keywords: list[str]) -> bool:
+    """Check if any keyword in keywords matches text as a full word."""
+    return any(_match_keyword(kw, text) for kw in keywords)
+
+
+def _count_keyword_hits(text: str, keywords: list[str]) -> int:
+    """Count how many keywords match text as full words."""
+    return sum(1 for kw in keywords if _match_keyword(kw, text))
+
+
 # ─────────────────────────────────────────────────────────────────
 # PUBLIC INTERFACE
 # ─────────────────────────────────────────────────────────────────
+
+def score_stories(stories: list[dict]) -> list[dict]:
+    """Score all stories using word-boundary keyword matching and return annotated copies."""
+    if not stories:
+        return []
+    return [_score_story(s) for s in stories]
+
 
 def rank_and_pick(stories: list[dict]) -> list[dict]:
     """
@@ -33,7 +57,7 @@ def rank_and_pick(stories: list[dict]) -> list[dict]:
         return []
 
     # Score every story
-    scored = [_score_story(s) for s in stories]
+    scored = score_stories(stories)
 
     # Sort descending
     scored.sort(key=lambda s: s["final_score"], reverse=True)
@@ -60,9 +84,9 @@ def _score_story(story: dict) -> dict:
     text = f"{s.get('title', '')} {s.get('summary', '')}".lower()
 
     # ── Detect flags ──────────────────────────────────────────────
-    s["india_relevant"] = any(kw in text for kw in INDIA_KEYWORDS)
-    s["is_ai_related"] = any(kw in text for kw in AI_KEYWORDS)
-    s["is_opportunity"] = any(kw in text for kw in OPPORTUNITY_KEYWORDS)
+    s["india_relevant"] = _has_any_keyword(text, INDIA_KEYWORDS)
+    s["is_ai_related"] = _has_any_keyword(text, AI_KEYWORDS)
+    s["is_opportunity"] = _has_any_keyword(text, OPPORTUNITY_KEYWORDS)
 
     if s.get("region") == "india" or s["india_relevant"]:
         s["region"] = "india"
@@ -86,7 +110,7 @@ def _score_story(story: dict) -> dict:
     if s["is_ai_related"]:
         bonuses += AI_KEYWORD_BONUS
     if s["is_opportunity"]:
-        is_tier1 = any(kw in text for kw in TIER1_COMPANY_KEYWORDS)
+        is_tier1 = _has_any_keyword(text, TIER1_COMPANY_KEYWORDS)
         if s["india_relevant"] or is_tier1:
             bonuses += OPPORTUNITY_BONUS
             if is_tier1:
@@ -98,7 +122,7 @@ def _score_story(story: dict) -> dict:
             # Demote niche opportunities so they don't dominate the mix pass
             s["is_opportunity"] = False
 
-    boost_hits = sum(1 for kw in BOOST_KEYWORDS if kw in text)
+    boost_hits = _count_keyword_hits(text, BOOST_KEYWORDS)
     bonuses += boost_hits * BOOST_KEYWORD_BONUS
 
     # ── Comment velocity multiplier ───────────────────────────────
@@ -113,7 +137,7 @@ def _score_story(story: dict) -> dict:
     final = (base + bonuses) * comment_mult
 
     # ── Noise penalty ─────────────────────────────────────────────
-    if any(kw in text for kw in NOISE_KEYWORDS):
+    if _has_any_keyword(text, NOISE_KEYWORDS):
         final *= NOISE_PENALTY
 
     s["final_score"] = round(final, 2)
@@ -128,55 +152,91 @@ def _recency_multiplier(age_hours: float) -> float:
 
 
 # ─────────────────────────────────────────────────────────────────
+# MIX PASS HELPERS
+# ─────────────────────────────────────────────────────────────────
+
+def _is_tool_story(story: dict) -> bool:
+    """
+    Returns True if the story looks like a tool / agent / AI system launch.
+    Matches GitHub trending, ProductHunt, and keyword-heavy tool stories.
+    """
+    source = story.get("source", "").lower()
+    if source in ("github_trending", "producthunt"):
+        return True
+    if story.get("is_tool_launch"):
+        return True
+    text = f"{story.get('title', '')} {story.get('summary', '')}".lower()
+    return _has_any_keyword(text, TOOL_STORY_KEYWORDS)
+
+
+def _is_hackathon_story(story: dict) -> bool:
+    """
+    Returns True if the story is about an *active* hackathon (not a recap/tips piece).
+    Noise keywords (strategy, tips, recap) are already penalised by the scorer.
+    """
+    text = f"{story.get('title', '')} {story.get('summary', '')}".lower()
+    # Must match at least one hackathon keyword
+    if not _has_any_keyword(text, HACKATHON_KEYWORDS):
+        return False
+    # Reject stories that are clearly noise (recap/tips) even if hackathon word appears
+    noise_patterns = [
+        "recap", "tips", "strategy", "how to win", "how i won",
+        "lessons learned", "mistakes", "survive", "guide to",
+    ]
+    if any(p in text for p in noise_patterns):
+        return False
+    return True
+
+
+# ─────────────────────────────────────────────────────────────────
 # MIX PASS
 # ─────────────────────────────────────────────────────────────────
 
 def _mix_pass(scored: list[dict]) -> list[dict]:
     """
-    Ensure a true mix of content in the top 3:
-    1. Highest scoring Opportunity (if exists)
-    2. Highest scoring India story (if exists)
-    3. Highest scoring General/Tool story
+    Enforce exactly 3 content slots:
+    1. Tool / Agent / AI System  — GitHub repos, launches, new models, SDKs
+    2. Prominent Hackathon       — Active hackathon with real prizes/impact
+    3. Trending AI News OR Fellowship — Market-moving news or a notable grant
     """
     top3 = []
     picked_ids = set()
 
-    # 1. Opportunity
+    # Slot 1: Tool / Agent / AI System
     for s in scored:
-        if s.get("is_opportunity") and s["id"] not in picked_ids:
+        if _is_tool_story(s) and s["id"] not in picked_ids:
             top3.append(s)
             picked_ids.add(s["id"])
-            log.info(f"Mix pass: added opportunity '{s['title'][:40]}'")
+            log.info(f"Mix pass slot 1 (Tool/Agent): '{s['title'][:50]}'")
             break
 
-    # 2. India
+    # Slot 2: Prominent Hackathon
     for s in scored:
-        if s.get("india_relevant") and s["id"] not in picked_ids:
+        if _is_hackathon_story(s) and s["id"] not in picked_ids:
             top3.append(s)
             picked_ids.add(s["id"])
-            log.info(f"Mix pass: added India story '{s['title'][:40]}'")
+            log.info(f"Mix pass slot 2 (Hackathon): '{s['title'][:50]}'")
             break
 
-    # 3. General AI/Tool (must NOT be an opportunity)
+    # Slot 3: Trending AI News OR Fellowship
+    # Take the highest-scoring remaining story (anything that isn't already picked)
     for s in scored:
-        if len(top3) >= 3:
-            break
-        if s["id"] not in picked_ids and not s.get("is_opportunity"):
+        if s["id"] not in picked_ids:
             top3.append(s)
             picked_ids.add(s["id"])
-            log.info(f"Mix pass: added general/tool story '{s['title'][:40]}'")
+            log.info(f"Mix pass slot 3 (News/Fellowship): '{s['title'][:50]}'")
             break
-            
-    # 4. Fallback (if we somehow still don't have 3, take highest remaining)
+
+    # Fallback: if any slot came up empty, fill with best remaining stories
     for s in scored:
         if len(top3) >= 3:
             break
         if s["id"] not in picked_ids:
             top3.append(s)
             picked_ids.add(s["id"])
-            log.info(f"Mix pass: added fallback story '{s['title'][:40]}'")
+            log.info(f"Mix pass fallback: '{s['title'][:50]}'")
 
-    # Sort so the absolute highest score is shown first
+    # Present in score order (highest score first) so the brief feels natural
     top3.sort(key=lambda x: x.get("final_score", 0), reverse=True)
     return top3
 
@@ -188,18 +248,20 @@ def _mix_pass(scored: list[dict]) -> list[dict]:
 def suggest_format(story: dict) -> str:
     """
     Suggest a LinkedIn format based on story characteristics.
-    Returns: "text" | "carousel" | "image"
+    Returns: "text" | "carousel"
+
+    "image" is intentionally excluded from auto-suggestions.
+    Users can still switch to image manually by typing 'image' in Telegram.
     """
     text = f"{story.get('title', '')} {story.get('summary', '')}".lower()
-    url = story.get("url", "").lower()
 
-    if story.get("is_tool_launch") and "github.com" in url:
-        return "image"
-
-    if any(kw in text for kw in BENCHMARK_KEYWORDS):
+    # Tool/Agent/GitHub stories → carousel (richer visual format)
+    if _is_tool_story(story):
         return "carousel"
 
-    if story.get("india_relevant") and story.get("age_hours", 999) < 12:
-        return "text"
+    # Benchmark / comparison stories → carousel (data shows better than text)
+    if _has_any_keyword(text, BENCHMARK_KEYWORDS):
+        return "carousel"
 
+    # Everything else (news, fellowships, hackathons) → clean text post
     return "text"

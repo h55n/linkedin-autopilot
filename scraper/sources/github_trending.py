@@ -7,7 +7,7 @@ import time
 import requests
 from bs4 import BeautifulSoup
 from utils.logger import get_logger
-from utils.helpers import url_to_id
+from utils.helpers import url_to_id, get_http_session
 from config.settings import (
     REQUEST_TIMEOUT, REQUEST_USER_AGENT, GITHUB_TRENDING_TOP
 )
@@ -17,10 +17,12 @@ log = get_logger("scraper.github")
 GITHUB_TRENDING_URL = "https://github.com/trending?since=daily"
 
 
-def scrape_github_trending() -> list[dict]:
+def scrape_github_trending(session=None) -> list[dict]:
     """Return top N trending GitHub repos as story dicts."""
+    if session is None:
+        session = get_http_session()
     try:
-        resp = requests.get(
+        resp = session.get(
             GITHUB_TRENDING_URL,
             headers={"User-Agent": REQUEST_USER_AGENT},
             timeout=REQUEST_TIMEOUT,
@@ -66,9 +68,12 @@ def _parse_article(article) -> dict | None:
 
     # Stars
     stars_tag = article.select_one("a[href*='stargazers']")
-    stars_text = stars_tag.get_text(strip=True).replace(",", "") if stars_tag else "0"
+    stars_text = stars_tag.get_text(strip=True).replace(",", "").lower() if stars_tag else "0"
     try:
-        stars = int(stars_text.replace("k", "00").replace(".", ""))
+        if "k" in stars_text:
+            stars = int(float(stars_text.replace("k", "").strip()) * 1000)
+        else:
+            stars = int(stars_text.strip())
     except ValueError:
         stars = 0
 

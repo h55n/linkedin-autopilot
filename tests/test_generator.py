@@ -55,34 +55,34 @@ SAMPLE_CAROUSEL_JSON = json.dumps({
 # TEXT POST TESTS
 # ─────────────────────────────────────────────────────────────────
 
-@patch("generator.generator.client")
-def test_text_post_is_lowercase(mock_client):
-    mock_client.chat.completions.create.return_value = mock_groq_response(SAMPLE_TEXT_POST)
+@patch("generator.generator._call_llm")
+def test_text_post_is_lowercase(mock_llm):
+    mock_llm.return_value = SAMPLE_TEXT_POST
     story = make_story()
     result = generate_post(story, post_type="text")
     post_text = result["post_text"]
     assert post_text == post_text.lower(), "Post must be all lowercase"
 
 
-@patch("generator.generator.client")
-def test_text_post_has_no_em_dashes(mock_client):
-    mock_client.chat.completions.create.return_value = mock_groq_response(SAMPLE_TEXT_POST)
+@patch("generator.generator._call_llm")
+def test_text_post_has_no_em_dashes(mock_llm):
+    mock_llm.return_value = SAMPLE_TEXT_POST
     story = make_story()
     result = generate_post(story, post_type="text")
     assert "—" not in result["post_text"]
 
 
-@patch("generator.generator.client")
-def test_text_post_has_no_exclamation_marks(mock_client):
-    mock_client.chat.completions.create.return_value = mock_groq_response(SAMPLE_TEXT_POST)
+@patch("generator.generator._call_llm")
+def test_text_post_has_no_exclamation_marks(mock_llm):
+    mock_llm.return_value = SAMPLE_TEXT_POST
     story = make_story()
     result = generate_post(story, post_type="text")
     assert "!" not in result["post_text"]
 
 
-@patch("generator.generator.client")
-def test_text_post_type_in_result(mock_client):
-    mock_client.chat.completions.create.return_value = mock_groq_response(SAMPLE_TEXT_POST)
+@patch("generator.generator._call_llm")
+def test_text_post_type_in_result(mock_llm):
+    mock_llm.return_value = SAMPLE_TEXT_POST
     result = generate_post(make_story(), post_type="text")
     assert result["post_type"] == "text"
     assert result["post_text"]
@@ -93,9 +93,9 @@ def test_text_post_type_in_result(mock_client):
 # CAROUSEL TESTS
 # ─────────────────────────────────────────────────────────────────
 
-@patch("generator.generator.client")
-def test_carousel_json_is_valid(mock_client):
-    mock_client.chat.completions.create.return_value = mock_groq_response(SAMPLE_CAROUSEL_JSON)
+@patch("generator.generator._call_llm")
+def test_carousel_json_is_valid(mock_llm):
+    mock_llm.return_value = SAMPLE_CAROUSEL_JSON
     result = generate_post(make_story(), post_type="carousel")
     assert result["post_type"] == "carousel"
     assert result["carousel_data"] is not None
@@ -106,23 +106,21 @@ def test_carousel_json_is_valid(mock_client):
         assert "heading" in slide
 
 
-@patch("generator.generator.client")
-def test_carousel_slides_are_lowercase(mock_client):
-    mock_client.chat.completions.create.return_value = mock_groq_response(SAMPLE_CAROUSEL_JSON)
+@patch("generator.generator._call_llm")
+def test_carousel_slides_are_lowercase(mock_llm):
+    mock_llm.return_value = SAMPLE_CAROUSEL_JSON
     result = generate_post(make_story(), post_type="carousel")
     for slide in result["carousel_data"]["slides"]:
         heading = slide.get("heading", "")
         body = slide.get("body", "")
-        # Allow acronyms (GPT, API) — just check no unexpected caps
-        # Basic check: heading shouldn't start with uppercase word (unless acronym)
         if heading:
             first_word = heading.split()[0]
             if len(first_word) > 3:  # skip acronyms
                 assert first_word == first_word.lower(), f"Heading has uppercase: {heading}"
 
 
-@patch("generator.generator.client")
-def test_carousel_max_5_slides_enforced(mock_client):
+@patch("generator.generator._call_llm")
+def test_carousel_max_5_slides_enforced(mock_llm):
     """Even if LLM returns 7 slides, we cap at 5."""
     big_carousel = json.dumps({
         "intro_text": "hook sentence here",
@@ -131,18 +129,18 @@ def test_carousel_max_5_slides_enforced(mock_client):
             for i in range(7)
         ]
     })
-    mock_client.chat.completions.create.return_value = mock_groq_response(big_carousel)
+    mock_llm.return_value = big_carousel
     result = generate_post(make_story(), post_type="carousel")
     assert len(result["carousel_data"]["slides"]) <= 5
 
 
-@patch("generator.generator.client")
-def test_carousel_fallback_to_text_on_bad_json(mock_client):
+@patch("generator.generator._call_llm")
+def test_carousel_fallback_to_text_on_bad_json(mock_llm):
     """If carousel JSON is invalid twice, falls back to text post."""
-    mock_client.chat.completions.create.side_effect = [
-        mock_groq_response("this is not valid json at all"),
-        mock_groq_response("also not json"),
-        mock_groq_response(SAMPLE_TEXT_POST),  # fallback text post call
+    mock_llm.side_effect = [
+        "this is not valid json at all",
+        "also not json",
+        SAMPLE_TEXT_POST,  # fallback text post call
     ]
     result = generate_post(make_story(), post_type="carousel")
     assert result["post_type"] == "text"
@@ -153,10 +151,10 @@ def test_carousel_fallback_to_text_on_bad_json(mock_client):
 # EDIT POST TEST
 # ─────────────────────────────────────────────────────────────────
 
-@patch("generator.generator.client")
-def test_edit_post_applies_instruction(mock_client):
+@patch("generator.generator._call_llm")
+def test_edit_post_applies_instruction(mock_llm):
     edited_text = "mistral 7b matches gpt-4 on code. runs locally on a macbook."
-    mock_client.chat.completions.create.return_value = mock_groq_response(edited_text)
+    mock_llm.return_value = edited_text
 
     result = generate_post_with_edit(
         original_post=SAMPLE_TEXT_POST,

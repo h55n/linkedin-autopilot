@@ -4,9 +4,10 @@ Fetches top stories from Hacker News via Firebase REST API.
 """
 
 import time
+from concurrent.futures import ThreadPoolExecutor
 import requests
 from utils.logger import get_logger
-from utils.helpers import clean_title, url_to_id, timestamp_to_age_hours
+from utils.helpers import clean_title, url_to_id, timestamp_to_age_hours, is_tool_launch, get_http_session
 from config.settings import (
     REQUEST_TIMEOUT, HN_RATE_LIMIT_MS, HN_MIN_SCORE,
     HN_TOP_LIMIT, REQUEST_USER_AGENT, MAX_AGE_HOURS, SHOW_HN_RAW_BONUS
@@ -18,12 +19,14 @@ HN_BASE = "https://hacker-news.firebaseio.com/v0"
 HEADERS = {"User-Agent": REQUEST_USER_AGENT}
 
 
-def scrape_hackernews() -> list[dict]:
+def scrape_hackernews(session=None) -> list[dict]:
     """Return list of story dicts from HN top stories."""
+    if session is None:
+        session = get_http_session()
     stories = []
 
     try:
-        resp = requests.get(
+        resp = session.get(
             f"{HN_BASE}/topstories.json",
             timeout=REQUEST_TIMEOUT,
             headers=HEADERS,
@@ -34,22 +37,27 @@ def scrape_hackernews() -> list[dict]:
         log.warning(f"Failed to fetch HN top stories: {e}")
         return []
 
-    for item_id in top_ids:
-        try:
-            time.sleep(HN_RATE_LIMIT_MS / 1000)
-            item = _fetch_item(item_id)
-            if item:
-                stories.append(item)
-        except Exception as e:
-            log.debug(f"Skipping HN item {item_id}: {e}")
-            continue
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        futures = [
+            executor.submit(_fetch_item, item_id, session)
+            for item_id in top_ids
+        ]
+        for future in futures:
+            try:
+                item = future.result()
+                if item:
+                    stories.append(item)
+            except Exception as e:
+                log.debug(f"Skipping HN item: {e}")
 
     log.info(f"HN: fetched {len(stories)} stories")
     return stories
 
 
-def _fetch_item(item_id: int) -> dict | None:
-    resp = requests.get(
+def _fetch_item(item_id: int, session=None) -> dict | None:
+    if session is None:
+        session = get_http_session()
+    resp = session.get(
         f"{HN_BASE}/item/{item_id}.json",
         timeout=REQUEST_TIMEOUT,
         headers=HEADERS,
@@ -104,13 +112,8 @@ def _fetch_item(item_id: int) -> dict | None:
         "score": raw_score,
         "comments": comments,
         "timestamp": timestamp,
-        "is_tool_launch": is_show_hn or _is_tool_launch(clean),
+        "is_tool_launch": is_show_hn or is_tool_launch(clean),
         "region": "global",
         "age_hours": age_hours,
     }
 
-
-def _is_tool_launch(title: str) -> bool:
-    from config.settings import TOOL_LAUNCH_KEYWORDS
-    t = title.lower()
-    return any(kw in t for kw in TOOL_LAUNCH_KEYWORDS)

@@ -103,6 +103,7 @@ RULES:
 - intro_text: 1 sentence, creates curiosity gap.
 - IMPORTANT: the `body` fields MUST contain double newlines (`\\n\\n`) to separate sentences into short paragraphs.
 - Do NOT use all lowercase. Use natural Title Case for cover headings, and Sentence case for subheadings and body text.
+- CRITICAL JSON RULE: Output ONLY the raw JSON object. NO markdown code fences (no ```json or ```). NO introductory text like "Here is the JSON". Start your response exactly with {{ and end exactly with }}.
 """
 
 

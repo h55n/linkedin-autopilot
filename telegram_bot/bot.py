@@ -40,10 +40,10 @@ log = get_logger("telegram_bot")
 def build_application() -> Application:
     """Build and return the Telegram bot application."""
     app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
-    app.add_handler(MessageHandler(filters.ALL, _handle_message))
     app.add_handler(CommandHandler("status", _handle_status))
     app.add_handler(CommandHandler("log", _handle_log))
     app.add_handler(CommandHandler("research", _handle_research))
+    app.add_handler(MessageHandler(filters.ALL, _handle_message))
     return app
 
 
@@ -275,22 +275,26 @@ async def _generate_and_send_draft(msg, story: dict, format_type: str, angle: st
     )
     await msg.reply_text(draft_msg)
 
-    # If image format — take screenshots automatically and send them
-    if actual_format == "image":
+    # Always attempt a screenshot of the source URL and send it alongside the draft.
+    # This gives you a visual reference for every post regardless of format.
+    story_url = story.get("url", "")
+    if story_url:
+        # Check if user supplied a custom image (only possible for image-format picks)
         from utils.helpers import read_state
         state = read_state()
         custom_image = state.get("custom_image")
-        if custom_image and os.path.exists(custom_image):
+
+        if actual_format == "image" and custom_image and os.path.exists(custom_image):
             await msg.reply_text("using your custom image...")
             bot = Bot(token=TELEGRAM_BOT_TOKEN)
             with open(custom_image, "rb") as f:
                 await bot.send_photo(
                     chat_id=msg.chat.id,
                     photo=f,
-                    caption="custom image received — attach this when posting on linkedin."
+                    caption="custom image received — attach this when posting on linkedin.",
                 )
         else:
-            await msg.reply_text("taking screenshots of the url...")
+            # Auto-screenshot for all formats
             try:
                 screenshot_paths = await take_screenshots_for_story(story)
                 if screenshot_paths:
@@ -298,18 +302,26 @@ async def _generate_and_send_draft(msg, story: dict, format_type: str, angle: st
                     bot = Bot(token=TELEGRAM_BOT_TOKEN)
                     for path in screenshot_paths:
                         with open(path, "rb") as f:
+                            caption = (
+                                "screenshot of source — attach when posting on linkedin."
+                                if actual_format == "image"
+                                else "source screenshot — for reference."
+                            )
                             await bot.send_photo(
                                 chat_id=msg.chat.id,
                                 photo=f,
-                                caption="screenshot captured automatically — attach this when posting on linkedin.",
+                                caption=caption,
                             )
-                else:
-                    instruction = f"screenshot of {story.get('url', 'the tool')}"
+                elif actual_format == "image":
+                    # Only show the manual instruction if the user specifically picked image format
+                    instruction = f"screenshot of {story_url}"
                     await msg.reply_text(IMAGE_INSTRUCTION.format(screenshot_instruction=instruction))
             except Exception as e:
                 log.warning(f"Auto-screenshot failed: {e}")
-                instruction = f"screenshot of {story.get('url', 'the tool')}"
-                await msg.reply_text(IMAGE_INSTRUCTION.format(screenshot_instruction=instruction))
+                if actual_format == "image":
+                    instruction = f"screenshot of {story_url}"
+                    await msg.reply_text(IMAGE_INSTRUCTION.format(screenshot_instruction=instruction))
+
 
 
 async def _regenerate_with_edit(msg, story: dict, format_type: str,
@@ -471,7 +483,7 @@ def _parse_pick(text: str, picks: list[dict]) -> tuple[int, str|None, str|None] 
     """
     text_lower = text.lower().strip()
     
-    match = re.match(r'^([123])[,.\s]?\s*(.*)?$', text_lower)
+    match = re.match(r'^([123])[,.\s]?\s*(.*)?$', text_lower, re.DOTALL)
     if match:
         story_num = int(match.group(1))
         angle = match.group(2).lstrip("+-\\_ ").strip() if match.group(2) else None
@@ -485,13 +497,6 @@ def _parse_pick(text: str, picks: list[dict]) -> tuple[int, str|None, str|None] 
             
         return story_num, angle, format_override
 
-    # Keyword match for formats (e.g., "image", "carousel", "text")
-    format_keywords = ["image", "carousel", "text"]
-    for keyword in format_keywords:
-        if text_lower == keyword or text_lower == f"the {keyword} one" or text_lower == f"{keyword} one":
-            for i, p in enumerate(picks):
-                if p.get("format_suggestion") == keyword:
-                    return i + 1, None, None
 
     try:
         from generator.generator import parse_pick_with_llm

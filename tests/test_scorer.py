@@ -89,28 +89,37 @@ def test_ai_keyword_adds_bonus():
     assert s_ai["final_score"] > s_non["final_score"]
 
 
-def test_diversity_pass_inserts_india_story():
-    """If no India story in top 3, the 3rd slot should be replaced."""
-    # Build 4 high-scoring global stories and 1 lower-scoring India story
-    global_stories = [
-        make_story(id=f"g{i}", url=f"https://g{i}.com", title=f"global story {i}", score=500, age_hours=1.0)
-        for i in range(4)
-    ]
-    india = make_story(
-        id="india_div",
-        url="https://inc42.com/india-story",
-        title="bangalore startup raises $10m for vernacular ai",
-        score=50,   # low score — would normally not make top 3
-        region="india",
+def test_diversity_pass_has_three_slots():
+    """Mix pass should fill Tool/Agent, Hackathon, and News/Fellowship slots."""
+    tool = make_story(
+        id="tool1",
+        url="https://github.com/owner/cool-agent",
+        title="new open-source agent framework for python",
+        score=100,
+        age_hours=1.0,
+    )
+    hackathon = make_story(
+        id="hack1",
+        url="https://mlh.io/hackathon",
+        title="MLH hackathon 2026 applications open now",
+        score=50,
         age_hours=2.0,
     )
+    news = make_story(
+        id="news1",
+        url="https://techcrunch.com/story",
+        title="openai releases new reasoning model",
+        score=80,
+        age_hours=3.0,
+    )
 
-    all_stories = global_stories + [india]
-    picks = rank_and_pick(all_stories)
+    picks = rank_and_pick([tool, hackathon, news])
 
-    assert len(picks) <= 3
-    india_in_picks = any(s.get("india_relevant") for s in picks)
-    assert india_in_picks, "Diversity pass should inject an India story"
+    assert len(picks) == 3
+    ids = {s["id"] for s in picks}
+    assert "tool1" in ids, "Tool/Agent slot should be present"
+    assert "hack1" in ids, "Hackathon slot should be present"
+    assert "news1" in ids, "News/Fellowship slot should be present"
 
 
 def test_rank_and_pick_returns_at_most_3():
@@ -127,12 +136,12 @@ def test_rank_and_pick_handles_empty_input():
     assert picks == []
 
 
-def test_format_suggestion_image_for_tool_with_github():
+def test_format_suggestion_carousel_for_tool_with_github():
     story = make_story(
         url="https://github.com/owner/cool-tool",
         is_tool_launch=True,
     )
-    assert suggest_format(story) == "image"
+    assert suggest_format(story) == "carousel"
 
 
 def test_format_suggestion_carousel_for_benchmark_story():
@@ -144,13 +153,16 @@ def test_format_suggestion_carousel_for_benchmark_story():
     assert suggest_format(story) == "carousel"
 
 
-def test_format_suggestion_text_for_india_story():
+def test_format_suggestion_text_for_india_news_story():
     story = make_story(
-        title="india startup raises funding for ai",
+        id="india_news",
+        title="india startup raises funding in Series B round",
         url="https://inc42.com/story",
+        summary="a pune-based fintech startup closed its Series B funding round",
         region="india",
         is_tool_launch=False,
         age_hours=2.0,
+        source="inc42",
     )
     fmt = suggest_format(story)
     assert fmt == "text"
@@ -158,9 +170,12 @@ def test_format_suggestion_text_for_india_story():
 
 def test_format_suggestion_text_as_default():
     story = make_story(
-        title="some general tech news story",
+        id="generic_news",
+        title="tech company reports quarterly revenue growth",
         url="https://techcrunch.com/story",
+        summary="a tech company reported strong revenue numbers this quarter",
         is_tool_launch=False,
+        source="rss",
     )
     assert suggest_format(story) == "text"
 
@@ -174,3 +189,32 @@ def test_rank_and_pick_attaches_format_suggestion():
     for pick in picks:
         assert "format_suggestion" in pick
         assert pick["format_suggestion"] in ("text", "carousel", "image")
+
+
+def test_score_stories_returns_scored_list():
+    from scorer.scorer import score_stories
+    stories = [
+        make_story(id="s1", title="domain name registration update", score=100),
+        make_story(id="s2", title="new ai breakthrough in vision", score=100),
+    ]
+    scored = score_stories(stories)
+    assert len(scored) == 2
+    assert "final_score" in scored[0]
+    assert "final_score" in scored[1]
+
+
+def test_ai_keyword_word_boundary_no_false_positives():
+    from scorer.scorer import _score_story
+    # Words like domain, email, stipend, maintain, chain contain 'ai' substring but are NOT AI related
+    story_domain = make_story(id="d", url="https://example.com/d", title="company updates domain name and email system", summary="routine maintenance for email server")
+    story_stipend = make_story(id="s", url="https://example.com/s", title="stipend increased to maintain supply chain", summary="supply chain updates for logistics")
+    story_ai = make_story(id="a", url="https://example.com/a", title="new ai agent framework released", summary="an open source ai agent framework")
+
+    s_domain = _score_story(story_domain)
+    s_stipend = _score_story(story_stipend)
+    s_ai = _score_story(story_ai)
+
+    assert s_domain["is_ai_related"] is False
+    assert s_stipend["is_ai_related"] is False
+    assert s_ai["is_ai_related"] is True
+

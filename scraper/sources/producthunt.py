@@ -8,7 +8,7 @@ import re
 import feedparser
 import requests
 from utils.logger import get_logger
-from utils.helpers import url_to_id, timestamp_to_age_hours
+from utils.helpers import url_to_id, timestamp_to_age_hours, get_http_session
 from config.settings import (
     PRODUCT_HUNT_RSS, REQUEST_TIMEOUT, REQUEST_USER_AGENT,
     MAX_AGE_HOURS, AI_KEYWORDS
@@ -17,10 +17,12 @@ from config.settings import (
 log = get_logger("scraper.producthunt")
 
 
-def scrape_producthunt() -> list[dict]:
+def scrape_producthunt(session=None) -> list[dict]:
     """Return AI-related Product Hunt launches from the last 24h."""
+    if session is None:
+        session = get_http_session()
     try:
-        resp = requests.get(
+        resp = session.get(
             PRODUCT_HUNT_RSS,
             headers={"User-Agent": REQUEST_USER_AGENT},
             timeout=REQUEST_TIMEOUT,

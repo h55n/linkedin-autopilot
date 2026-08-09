@@ -147,16 +147,13 @@ def test_post_id_to_url_handles_empty():
 # TOKEN AGE TEST
 # ─────────────────────────────────────────────────────────────────
 
-@patch("linkedin.poster.os.path.exists", return_value=True)
-@patch("builtins.open", mock_open(read_data="2024-01-01"))
-def test_token_expiry_warning_at_55_days(mock_exists):
+def test_token_expiry_warning_at_55_days():
     """Token created 56 days ago should trigger warning."""
     from linkedin.poster import _check_token_age
-    from unittest.mock import patch as p2
     from datetime import date, timedelta
 
     old_date = (date.today() - timedelta(days=56)).isoformat()
 
-    with p2("builtins.open", mock_open(read_data=old_date)):
+    with patch("linkedin.poster.read_state", return_value={"linkedin_token_date": old_date}):
         days_old = _check_token_age()
         assert days_old >= 55

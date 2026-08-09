@@ -7,7 +7,7 @@ import time
 import feedparser
 import requests
 from utils.logger import get_logger
-from utils.helpers import url_to_id, timestamp_to_age_hours
+from utils.helpers import url_to_id, timestamp_to_age_hours, is_tool_launch, detect_region, get_http_session
 from config.settings import (
     RSS_FEEDS, REQUEST_TIMEOUT, REQUEST_USER_AGENT, MAX_AGE_HOURS
 )
@@ -17,13 +17,15 @@ log = get_logger("scraper.rss")
 INDIA_SOURCES = {"inc42", "yourstory", "entrackr", "ettech"}
 
 
-def scrape_rss_feeds() -> list[dict]:
+def scrape_rss_feeds(session=None) -> list[dict]:
     """Parse all configured RSS feeds and return story dicts."""
+    if session is None:
+        session = get_http_session()
     all_stories = []
 
     for source_key, feed_url in RSS_FEEDS.items():
         try:
-            stories = _parse_feed(source_key, feed_url)
+            stories = _parse_feed(source_key, feed_url, session=session)
             all_stories.extend(stories)
             log.info(f"{source_key}: {len(stories)} stories")
         except Exception as e:
@@ -33,10 +35,12 @@ def scrape_rss_feeds() -> list[dict]:
     return all_stories
 
 
-def _parse_feed(source_key: str, feed_url: str) -> list[dict]:
-    # Use requests to set proper user agent, then pass to feedparser
+def _parse_feed(source_key: str, feed_url: str, session=None) -> list[dict]:
+    if session is None:
+        session = get_http_session()
+    # Use session to set proper user agent, then pass to feedparser
     try:
-        resp = requests.get(
+        resp = session.get(
             feed_url,
             headers={"User-Agent": REQUEST_USER_AGENT},
             timeout=REQUEST_TIMEOUT,
@@ -97,7 +101,7 @@ def _parse_entry(entry, source_key: str, is_india: bool) -> dict | None:
     if not summary:
         summary = title
 
-    region = "india" if is_india else _detect_region(title + " " + summary)
+    region = "india" if is_india else detect_region(title, summary)
 
     return {
         "id": url_to_id(url),
@@ -109,21 +113,8 @@ def _parse_entry(entry, source_key: str, is_india: bool) -> dict | None:
         "score": 0,   # RSS feeds don't have scores — recency drives ranking
         "comments": 0,
         "timestamp": timestamp,
-        "is_tool_launch": _is_tool_launch(title + " " + summary),
+        "is_tool_launch": is_tool_launch(title, summary),
         "region": region,
         "age_hours": age_hours,
     }
 
-
-def _detect_region(text: str) -> str:
-    from config.settings import INDIA_KEYWORDS
-    t = text.lower()
-    if any(kw in t for kw in INDIA_KEYWORDS):
-        return "india"
-    return "global"
-
-
-def _is_tool_launch(text: str) -> bool:
-    from config.settings import TOOL_LAUNCH_KEYWORDS
-    t = text.lower()
-    return any(kw in t for kw in TOOL_LAUNCH_KEYWORDS)

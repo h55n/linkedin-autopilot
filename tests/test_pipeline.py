@@ -191,22 +191,59 @@ def test_log_post_writes_entry():
 
     story = MOCK_PICKS[0]
     with patch("utils.logger.DAILY_LOG_FILE", "logs/test_daily_log_temp.json"):
-        with patch("utils.logger.STREAK_FILE", "logs/test_streak_temp.json"):
-            entry = log_post(
-                story=story,
-                format_type="text",
-                post_text=SAMPLE_POST,
-                your_angle="my angle here",
-                linkedin_url="https://linkedin.com/feed/update/123",
-            )
+        entry = log_post(
+            story=story,
+            format_type="text",
+            post_text=SAMPLE_POST,
+            your_angle="my angle here",
+            linkedin_url="https://linkedin.com/feed/update/123",
+        )
 
     assert entry["story_title"] == story["title"]
     assert entry["format"] == "text"
     assert entry["status"] == "posted"
 
     # Cleanup
-    for f in ["logs/test_daily_log_temp.json", "logs/test_streak_temp.json"]:
-        try:
-            os.remove(f)
-        except OSError:
-            pass
+    try:
+        os.remove("logs/test_daily_log_temp.json")
+    except OSError:
+        pass
+
+
+def test_timestamp_to_age_hours_null_safety():
+    """Verify timestamp_to_age_hours(None) returns 0.0 without raising TypeError."""
+    from utils.helpers import timestamp_to_age_hours
+    assert timestamp_to_age_hours(None) == 0.0
+
+
+def test_voice_handler_lazy_groq_client():
+    """Verify voice_handler imports cleanly and initializes client lazily."""
+    import telegram_bot.voice_handler as vh
+    # Module import should not instantiate Groq client immediately
+    assert vh._client is None
+    with patch("telegram_bot.voice_handler.Groq") as mock_groq:
+        mock_groq.return_value = MagicMock()
+        client = vh._get_groq_client()
+        assert client is not None
+        mock_groq.assert_called_once()
+
+
+@pytest.mark.asyncio
+@patch("main.send_message", new_callable=AsyncMock)
+@patch("main.scrape_all", side_effect=RuntimeError("unexpected crash"))
+@patch("main.read_state")
+@patch("main.update_state")
+async def test_main_pipeline_finally_resets_processing_status(mock_update, mock_read, mock_scrape, mock_send):
+    """If an uncaught exception occurs during processing, main_pipeline finally resets status to failed."""
+    from main import main_pipeline
+    mock_read.side_effect = [
+        {"date": "1970-01-01", "status": "idle"},
+        {"date": "2026-08-09", "status": "processing"}
+    ]
+
+    await main_pipeline()
+
+    # Verify update_state was called with status="failed"
+    status_calls = [call.kwargs.get("status") for call in mock_update.call_args_list]
+    assert "failed" in status_calls
+

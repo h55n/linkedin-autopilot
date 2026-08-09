@@ -77,6 +77,18 @@ def test_deduplication_preserves_order():
     assert result[2]["id"] == "c"
 
 
+def test_deduplication_with_explicit_past_urls():
+    past = {"https://example.com/past-story"}
+    stories = [
+        make_story(id="a", url="https://example.com/past-story", title="old story"),
+        make_story(id="b", url="https://example.com/new-story", title="new story"),
+    ]
+    result = deduplicate(stories, past_urls=past)
+    assert len(result) == 1
+    assert result[0]["id"] == "b"
+
+
+
 # ─────────────────────────────────────────────────────────────────
 # SCHEMA VALIDATION
 # ─────────────────────────────────────────────────────────────────
@@ -94,9 +106,12 @@ def test_story_schema_has_required_fields():
 # MOCKED NETWORK TESTS
 # ─────────────────────────────────────────────────────────────────
 
-@patch("scraper.sources.hackernews.requests.get")
-def test_hackernews_returns_stories_mocked(mock_get):
+@patch("scraper.sources.hackernews.get_http_session")
+def test_hackernews_returns_stories_mocked(mock_get_session):
     """HN scraper returns correctly shaped stories with mocked responses."""
+    mock_session = MagicMock()
+    mock_get_session.return_value = mock_session
+
     # Mock top stories list
     mock_top = MagicMock()
     mock_top.json.return_value = [1, 2]
@@ -121,7 +136,7 @@ def test_hackernews_returns_stories_mocked(mock_get):
     }
     mock_item2.raise_for_status = MagicMock()
 
-    mock_get.side_effect = [mock_top, mock_item1, mock_item2]
+    mock_session.get.side_effect = [mock_top, mock_item1, mock_item2]
 
     from scraper.sources.hackernews import scrape_hackernews
     stories = scrape_hackernews()
@@ -131,10 +146,13 @@ def test_hackernews_returns_stories_mocked(mock_get):
     assert stories[0]["source"] == "hackernews"
 
 
-@patch("scraper.sources.reddit.requests.get")
-def test_reddit_returns_stories_mocked(mock_get):
+@patch("scraper.sources.reddit.get_http_session")
+def test_reddit_returns_stories_mocked(mock_get_session):
     """Reddit scraper returns correctly shaped stories with mocked response."""
     now = int(time.time())
+    mock_session = MagicMock()
+    mock_get_session.return_value = mock_session
+
     mock_resp = MagicMock()
     mock_resp.status_code = 200
     mock_resp.json.return_value = {
@@ -156,7 +174,7 @@ def test_reddit_returns_stories_mocked(mock_get):
         }
     }
     mock_resp.raise_for_status = MagicMock()
-    mock_get.return_value = mock_resp
+    mock_session.get.return_value = mock_resp
 
     from scraper.sources.reddit import scrape_reddit
     stories = scrape_reddit()
@@ -205,3 +223,144 @@ def test_scrape_all_handles_partial_failure(mock_gh, mock_ph, mock_rss, mock_red
     result = scrape_all()
 
     assert len(result) >= 1  # RSS stories still come through
+
+
+def test_github_trending_star_parsing():
+    """Verify that star count '12.35k' parses to 12350, not 123500."""
+    from bs4 import BeautifulSoup
+    from scraper.sources.github_trending import _parse_article
+
+    html_k = """
+    <article class="Box-row">
+        <h2><a href="/owner/repo1">owner/repo1</a></h2>
+        <p>A cool repo description</p>
+        <a href="/owner/repo1/stargazers">12.35k</a>
+        <span class="d-inline-block float-sm-right">150 stars today</span>
+    </article>
+    """
+    soup_k = BeautifulSoup(html_k, "html.parser").select_one("article")
+    parsed_k = _parse_article(soup_k)
+    assert parsed_k is not None
+    # score calculation: today_stars (150) + (stars // 100) -> 12350 // 100 = 123 -> total score = 273
+    # If stars were 123500, (123500 // 100) = 1235 -> total score would be 1385
+    assert parsed_k["score"] == 150 + (12350 // 100)
+
+    html_plain = """
+    <article class="Box-row">
+        <h2><a href="/owner/repo2">owner/repo2</a></h2>
+        <p>Another repo</p>
+        <a href="/owner/repo2/stargazers">500</a>
+        <span class="d-inline-block float-sm-right">50 stars today</span>
+    </article>
+    """
+    soup_plain = BeautifulSoup(html_plain, "html.parser").select_one("article")
+    parsed_plain = _parse_article(soup_plain)
+    assert parsed_plain is not None
+    assert parsed_plain["score"] == 50 + (500 // 100)
+
+
+# ─────────────────────────────────────────────────────────────────
+# MILESTONE 3: PERFORMANCE & CONCURRENCY TESTS
+# ─────────────────────────────────────────────────────────────────
+
+def test_get_http_session_returns_configured_session():
+    """Verify get_http_session returns a process-wide requests.Session with proper pool limits and User-Agent."""
+    import requests
+    from utils.helpers import get_http_session
+
+    session1 = get_http_session()
+    session2 = get_http_session()
+
+    assert isinstance(session1, requests.Session)
+    assert session1 is session2, "get_http_session must reuse process-wide Session instance"
+    assert "User-Agent" in session1.headers
+    assert session1.adapters["http://"]._pool_connections == 10
+    assert session1.adapters["https://"]._pool_connections == 10
+
+
+@patch("scraper.scraper.scrape_hackernews")
+@patch("scraper.scraper.scrape_reddit")
+@patch("scraper.scraper.scrape_rss_feeds")
+@patch("scraper.scraper.scrape_producthunt")
+@patch("scraper.scraper.scrape_github_trending")
+def test_parallel_scraper_execution(mock_gh, mock_ph, mock_rss, mock_reddit, mock_hn):
+    """Verify scrape_all executes scrapers concurrently via ThreadPoolExecutor(max_workers=5)."""
+    import time
+    from scraper.scraper import scrape_all
+
+    distinct_stories = {
+        "hn": ("hn_1", "https://hn.com/item1", "Hacker News reports quantum computing breakthrough in superconductors"),
+        "reddit": ("rd_1", "https://reddit.com/item1", "Reddit machine learning community discusses deep reinforcement learning"),
+        "rss": ("rss_1", "https://rss.com/item1", "Indian tech startup ecosystem sees record venture capital investment"),
+        "ph": ("ph_1", "https://ph.com/item1", "Product Hunt launches new developer productivity tool for visual workflow"),
+        "gh": ("gh_1", "https://gh.com/item1", "GitHub repository trends with high star growth for rust backend framework"),
+    }
+
+    def delayed_scraper(name, delay=0.1):
+        time.sleep(delay)
+        story_id, url, title = distinct_stories[name]
+        return [make_story(
+            id=story_id,
+            url=url,
+            discussion_url=f"{url}_discuss",
+            title=title,
+        )]
+
+    mock_hn.side_effect = lambda: delayed_scraper("hn")
+    mock_reddit.side_effect = lambda: delayed_scraper("reddit")
+    mock_rss.side_effect = lambda: delayed_scraper("rss")
+    mock_ph.side_effect = lambda: delayed_scraper("ph")
+    mock_gh.side_effect = lambda: delayed_scraper("gh")
+
+    start_time = time.time()
+    results = scrape_all()
+    duration = time.time() - start_time
+
+    assert len(results) == 5
+    # Total delay if sequential = 0.5s. Parallel execution should complete in ~0.15s (< 0.45s).
+    assert duration < 0.45, f"Scraper execution took {duration:.2f}s, expected concurrent execution"
+
+
+@patch("scraper.sources.reddit.REDDIT_SUBREDDITS", ["artificial", "MachineLearning"])
+@patch("scraper.sources.reddit.get_http_session")
+def test_reddit_http_429_rate_limit_non_blocking(mock_get_session):
+    """Verify Reddit HTTP 429 returns empty list immediately without 60s blocking sleep."""
+    import time
+    from scraper.sources.reddit import scrape_reddit
+
+    mock_session = MagicMock()
+    mock_get_session.return_value = mock_session
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 429
+    mock_session.get.return_value = mock_resp
+
+    start = time.time()
+    results = scrape_reddit()
+    elapsed = time.time() - start
+
+    assert elapsed < 1.5, f"Rate limit handled slowly: took {elapsed:.2f}s"
+    assert results == [], "HTTP 429 should gracefully return empty list for affected subreddits"
+
+
+def test_optimized_deduplication_length_filtering():
+    """Verify string length pre-filtering (>50% difference) skips fuzzy comparison accurately."""
+    from scraper.deduplicator import deduplicate
+
+    stories = [
+        make_story(id="1", url="https://a.com/1", title="Short title"),
+        make_story(
+            id="2",
+            url="https://b.com/2",
+            title="Short title but with an extraordinarily long suffix that makes the total length difference strictly greater than fifty percent compared to the first story title",
+        ),
+        make_story(id="3", url="https://c.com/3", title="short title"),  # Near dupe of #1 (case difference)
+    ]
+
+    result = deduplicate(stories)
+    # Story #1 and #3 are near duplicates -> #3 is removed. Story #2 is kept due to length filter / low similarity.
+    assert len(result) == 2
+    assert result[0]["id"] == "1"
+    assert result[1]["id"] == "2"
+
+

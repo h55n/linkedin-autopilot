@@ -13,6 +13,9 @@ jobs:
     name: Process Telegram Message
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    concurrency:
+      group: bot-session
+      cancel-in-progress: false
 
     env:
       STATE_BACKEND: gist

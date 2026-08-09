@@ -13,12 +13,69 @@ import hashlib
 import json
 import os
 import re
+import tempfile
 import time
 from datetime import datetime
 from urllib.parse import urlparse, urlunparse
 
 import pytz
-from config.settings import TIMEZONE, STATE_FILE
+import requests
+from requests.adapters import HTTPAdapter
+from config.settings import TIMEZONE, STATE_FILE, REQUEST_USER_AGENT
+
+
+# ── Connection Pooling ──────────────────────────────────────────
+
+_HTTP_SESSION = None
+
+def get_http_session(
+    pool_connections: int = 10,
+    pool_maxsize: int = 10,
+    user_agent: str | None = None,
+) -> requests.Session:
+    """
+    Return a process-wide shared requests.Session configured with connection pool limits
+    and default User-Agent headers.
+    """
+    global _HTTP_SESSION
+    if _HTTP_SESSION is None:
+        session = requests.Session()
+        adapter = HTTPAdapter(
+            pool_connections=pool_connections,
+            pool_maxsize=pool_maxsize,
+        )
+        session.mount("http://", adapter)
+        session.mount("https://", adapter)
+        ua = user_agent or REQUEST_USER_AGENT
+        session.headers.update({"User-Agent": ua})
+        _HTTP_SESSION = session
+    return _HTTP_SESSION
+
+
+
+# ── Atomic file operations ──────────────────────────────────────
+
+def atomic_write_json(filepath: str, data: dict | list, indent: int = 2, ensure_ascii: bool = False):
+    """Write JSON data to filepath atomically using a temporary file and os.replace."""
+    dir_name = os.path.dirname(os.path.abspath(filepath))
+    os.makedirs(dir_name, exist_ok=True)
+    
+    tf = tempfile.NamedTemporaryFile("w", dir=dir_name, delete=False, encoding="utf-8")
+    temp_name = tf.name
+    try:
+        json.dump(data, tf, indent=indent, ensure_ascii=ensure_ascii)
+        tf.flush()
+        tf.close()
+        os.replace(temp_name, filepath)
+    except Exception:
+        tf.close()
+        if os.path.exists(temp_name):
+            try:
+                os.remove(temp_name)
+            except OSError:
+                pass
+        raise
+
 
 
 # ── URL helpers ───────────────────────────────────────────────────
@@ -51,8 +108,10 @@ def now_ist() -> datetime:
     return datetime.now(tz)
 
 
-def timestamp_to_age_hours(ts: int) -> float:
+def timestamp_to_age_hours(ts: int | float | None) -> float:
     """Convert a Unix timestamp to age in hours from now."""
+    if ts is None:
+        return 0.0
     now = time.time()
     return max(0.0, (now - ts) / 3600)
 
@@ -90,19 +149,24 @@ def _gist_headers() -> dict:
 
 def _read_gist_state() -> dict:
     """Fetch state JSON from the GitHub Gist."""
-    import requests  # already in requirements
+    if not _GIST_TOKEN or not _GIST_ID:
+        return {}
     try:
-        resp = requests.get(_GIST_API, headers=_gist_headers(), timeout=10)
+        session = get_http_session()
+        resp = session.get(_GIST_API, headers=_gist_headers(), timeout=10)
         resp.raise_for_status()
         content = resp.json()["files"][_GIST_FILENAME]["content"]
         return json.loads(content)
-    except Exception:
+    except Exception as e:
+        from utils.logger import get_logger
+        get_logger("helpers").warning(f"Gist state read failed ({e}) — falling back to local file state")
         return {}
 
 
 def _write_gist_state(data: dict):
     """Push state JSON to the GitHub Gist."""
-    import requests
+    if not _GIST_TOKEN or not _GIST_ID:
+        return
     payload = {
         "files": {
             _GIST_FILENAME: {
@@ -110,7 +174,8 @@ def _write_gist_state(data: dict):
             }
         }
     }
-    resp = requests.patch(_GIST_API, headers=_gist_headers(),
+    session = get_http_session()
+    resp = session.patch(_GIST_API, headers=_gist_headers(),
                           json=payload, timeout=10)
     resp.raise_for_status()
 
@@ -128,26 +193,59 @@ def _read_file_state() -> dict:
 
 
 def _write_file_state(data: dict):
-    os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
-    with open(STATE_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
+    atomic_write_json(STATE_FILE, data)
+
+
+def save_state(data: dict):
+    """Save state to local file state and Gist (alias for write_state)."""
+    write_state(data)
+
+
+# ── Classification helpers ────────────────────────────────────────
+
+def is_tool_launch(title: str, content: str = "") -> bool:
+    """Check if title or content indicates a tool launch."""
+    from config.settings import TOOL_LAUNCH_KEYWORDS
+    text = (title + " " + content).lower()
+    return any(kw in text for kw in TOOL_LAUNCH_KEYWORDS)
+
+
+def detect_region(title: str, content: str = "") -> str:
+    """Detect whether text is region-specific (e.g. india) or global."""
+    from config.settings import INDIA_KEYWORDS
+    text = (title + " " + content).lower()
+    if any(kw in text for kw in INDIA_KEYWORDS):
+        return "india"
+    return "global"
+
 
 
 # ── Public API (same interface as before) ─────────────────────────
 
 def read_state() -> dict:
-    """Read today's state from the configured backend."""
+    """Read today's state from Gist if configured, falling back to local file state."""
+    state = {}
     if _STATE_BACKEND == "gist":
-        return _read_gist_state()
-    return _read_file_state()
+        state = _read_gist_state()
+    
+    # Fall back to local file if Gist was empty or failed
+    if not state:
+        state = _read_file_state()
+        
+    return state
 
 
 def write_state(data: dict):
-    """Write today's state to the configured backend."""
+    """Write today's state to local file state and Gist (if configured)."""
+    # Always write to local file state as fallback
+    _write_file_state(data)
+    
     if _STATE_BACKEND == "gist":
-        _write_gist_state(data)
-    else:
-        _write_file_state(data)
+        try:
+            _write_gist_state(data)
+        except Exception as e:
+            from utils.logger import get_logger
+            get_logger("helpers").error(f"Failed to push state to Gist: {e}")
 
 
 def update_state(**kwargs):
