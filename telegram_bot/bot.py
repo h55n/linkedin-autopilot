@@ -362,6 +362,21 @@ async def _generate_and_send_draft(msg, story: dict, format_type: str, angle: st
                     instruction = f"screenshot of {story_url}"
                     await msg.reply_text(IMAGE_INSTRUCTION.format(screenshot_instruction=instruction))
 
+    # Send Carousel PDF preview
+    if actual_format == "carousel" and carousel_data:
+        try:
+            pdf_path = generate_carousel_pdf(carousel_data)
+            if pdf_path and os.path.exists(pdf_path):
+                bot = Bot(token=TELEGRAM_BOT_TOKEN)
+                with open(pdf_path, "rb") as f:
+                    await bot.send_document(
+                        chat_id=msg.chat.id,
+                        document=f,
+                        filename="carousel_preview.pdf",
+                        caption="carousel preview (this pdf will be published to linkedin)."
+                    )
+        except Exception as e:
+            log.error(f"Carousel PDF preview generation failed: {e}")
 
 
 async def _regenerate_with_edit(msg, story: dict, format_type: str,
