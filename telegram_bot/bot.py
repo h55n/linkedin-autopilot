@@ -127,24 +127,19 @@ async def _handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await msg.reply_text(CANCELLED)
         return
 
-    # ── State: waiting for story pick ────────────────────────────
-
     if current_status in ("waiting", "reminder_sent"):
         picks = state.get("picks", [])
         parsed = _parse_pick(text, picks)
         if parsed:
-            if len(parsed) == 2:
-                story_num, angle = parsed
-                format_override = None
-            else:
-                story_num, angle, format_override = parsed
+            story_num, angle, format_override = parsed
 
             if story_num < 1 or story_num > len(picks):
                 await msg.reply_text(f"pick a number between 1 and {len(picks)}")
                 return
 
             story = picks[story_num - 1]
-            format_type = format_override or story.get("format_suggestion", "text")
+            # Image is the default — only override if user or scorer explicitly says otherwise
+            format_type = format_override or "image"
 
             update_state(
                 status="processing",
@@ -157,39 +152,84 @@ async def _handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await msg.reply_text(PROCESSING)
             await _generate_and_send_draft(msg, story, format_type, angle)
         else:
-            await msg.reply_text("reply with a number (1, 2, or 3) + your take")
+            await msg.reply_text(
+                "not sure which story you picked. reply with:\n"
+                "1, 2, or 3 — or just say which one you like (e.g. 'I like story 2')\n"
+                "add your take after the number, or say 'skip' to skip today."
+            )
         return
 
     # ── State: draft sent, waiting for action ────────────────────
 
     if current_status == "draft_sent":
         story = state.get("selected_story", {})
-        current_format = state.get("current_format", "text")
+        current_format = state.get("current_format", "image")
         current_draft = state.get("current_draft", "")
 
+        # Fast-path exact commands
         if text_lower == "post":
             await _publish(msg, state, story, current_format, current_draft)
+            return
 
-        elif text_lower.startswith("edit "):
+        if text_lower == "cancel":
+            update_state(status="idle")
+            await msg.reply_text(CANCELLED)
+            return
+
+        if text_lower.startswith("edit "):
             edit_note = text[5:].strip()
             await msg.reply_text(PROCESSING)
             await _regenerate_with_edit(msg, story, current_format, current_draft, edit_note, state)
+            return
 
-        elif text_lower in ("carousel", "image", "text"):
+        if text_lower in ("carousel", "image", "text"):
             new_format = text_lower
             angle = state.get("user_angle")
             update_state(current_format=new_format)
             await msg.reply_text(PROCESSING)
             await _generate_and_send_draft(msg, story, new_format, angle)
+            return
 
-        else:
-            await msg.reply_text(
-                "not sure what to do. reply:\n"
-                "'post' to publish\n"
-                "'edit [instruction]' to tweak\n"
-                "'carousel' / 'image' / 'text' to switch format\n"
-                "'cancel' to drop it"
-            )
+        # NLP fallback — classify natural language intent
+        try:
+            from generator.generator import classify_action_with_llm
+            intent = classify_action_with_llm(text)
+        except Exception:
+            intent = None
+
+        if intent:
+            action = intent.get("action")
+            detail = intent.get("detail")
+
+            if action == "post":
+                await _publish(msg, state, story, current_format, current_draft)
+                return
+
+            elif action == "edit" and detail:
+                await msg.reply_text(PROCESSING)
+                await _regenerate_with_edit(msg, story, current_format, current_draft, detail, state)
+                return
+
+            elif action == "switch" and detail in ("carousel", "image", "text"):
+                angle = state.get("user_angle")
+                update_state(current_format=detail)
+                await msg.reply_text(PROCESSING)
+                await _generate_and_send_draft(msg, story, detail, angle)
+                return
+
+            elif action == "cancel":
+                update_state(status="idle")
+                await msg.reply_text(CANCELLED)
+                return
+
+        # Truly unclear
+        await msg.reply_text(
+            "not sure what to do. reply:\n"
+            "'post' — publish it\n"
+            "'edit [instruction]' — e.g. 'edit make it shorter'\n"
+            "'image' / 'carousel' / 'text' — switch format\n"
+            "'cancel' — drop it"
+        )
         return
 
     # ── Catch-all for idle state ──────────────────────────────────
@@ -474,37 +514,59 @@ async def _handle_log(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # PARSING
 # ─────────────────────────────────────────────────────────────────
 
-def _parse_pick(text: str, picks: list[dict]) -> tuple[int, str|None, str|None] | None:
+
+def _parse_pick(text: str, picks: list[dict]) -> tuple[int, str | None, str | None] | None:
     """
     Parse the user's response to identify which story they picked (1, 2, or 3)
-    and extract any custom instructions/angle.
-    
-    First tries strict regex, then format keyword matching, then LLM fallback.
+    and extract any custom instructions/angle and format preference.
+
+    Always returns a 3-tuple: (story_num, angle, format_override) or None.
+
+    Fast-path: strict regex for simple numeric picks.
+    Fallback: LLM parses natural language with full context.
     """
     text_lower = text.lower().strip()
-    
+
+    # Fast-path: starts with 1, 2, or 3
     match = re.match(r'^([123])[,.\s]?\s*(.*)?$', text_lower, re.DOTALL)
     if match:
         story_num = int(match.group(1))
         angle = match.group(2).lstrip("+-\\_ ").strip() if match.group(2) else None
-        
+
         format_override = None
+        # Check if the entire angle is just a format keyword
         if angle in ("image", "carousel", "text"):
             format_override = angle
             angle = None
-        elif not angle:
-            angle = None
-            
+        elif angle:
+            # Check for embedded format keywords in angle (e.g. "my take here, use carousel")
+            for fmt in ("carousel", "image", "text"):
+                patterns = [
+                    f"use {fmt}", f"as {fmt}", f"post {fmt}", f"with {fmt}",
+                    f"{fmt} format", f"make it a {fmt}", f"switch to {fmt}",
+                ]
+                for pat in patterns:
+                    if pat in angle:
+                        format_override = fmt
+                        # Strip the format instruction from the angle
+                        angle = angle.replace(pat, "").strip().strip(",").strip()
+                        break
+                if format_override:
+                    break
+            # Clean up empty angle
+            if not angle:
+                angle = None
+
         return story_num, angle, format_override
 
-
+    # NLP fallback — LLM understands natural language picks
     try:
         from generator.generator import parse_pick_with_llm
         result = parse_pick_with_llm(text, picks)
         if result:
-            return result[0], result[1], None
+            # result is (story_num, angle, format_override) — pass all through
+            return result[0], result[1], result[2]
     except Exception as e:
-        from utils.logger import get_logger
-        log = get_logger("bot")
         log.error(f"LLM parsing fallback failed: {e}")
-        return None
+
+    return None

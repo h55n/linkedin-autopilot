@@ -14,23 +14,28 @@ build/
 htmlcov/
 .mypy_cache/
 
-# Runtime state
-state/today.json
-logs/daily_log.json
-logs/streak.json
-logs/errors.log
+# Runtime state (entire dirs — use Gist backend in prod)
+state/
+logs/
 
 # Voice note temp files
 *.ogg
 *.mp3
 
-# Generated carousel assets
+# Generated outputs
 carousel/output/
 *.pdf
-*.png
+
+# Screenshots (generated at runtime)
+*.jpg
+*.jpeg
 
 # Fonts (download separately — see README)
 carousel/assets/fonts/*.ttf
+
+# Scratch / dev only
+scratch/
+scripts/scratch/
 
 # macOS
 .DS_Store

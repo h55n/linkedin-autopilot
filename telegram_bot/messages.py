@@ -27,9 +27,10 @@ here's your post:
 
 format: {format_label}
 ────────────────────────────
-reply 'post' to publish
-reply 'edit [what to change]' to tweak
-reply 'carousel' / 'image' / 'text' to switch format
+reply 'post' to publish (with image, as default)
+reply 'text' to switch to text-only
+reply 'carousel' to switch to carousel
+reply 'edit [what to change]' to tweak — e.g. 'edit make it punchier'
 reply 'cancel' to drop it\
 """
 
@@ -90,5 +91,5 @@ LOG_ENTRY_CANCELLED = "{date} ✗ cancelled"
 FORMAT_LABELS = {
     "text": "text post",
     "carousel": "carousel (pdf)",
-    "image": "image pair",
+    "image": "image post (screenshot attached)",
 }

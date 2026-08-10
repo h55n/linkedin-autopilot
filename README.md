@@ -1,202 +1,190 @@
 # LinkedIn Autopilot
 
-A fully automated daily LinkedIn content pipeline with a single human checkpoint — you, on Telegram, every morning.
-
-**Total time per day: under 3 minutes.**
-
----
+A personal, fully automated LinkedIn posting system. It researches trending stories daily, sends you a Telegram brief, and publishes to LinkedIn on your command — in text, image, or carousel format.
 
 ## How It Works
 
 ```
-07:00 AM IST  → System scrapes HN, Reddit, RSS feeds, Product Hunt, GitHub Trending
-               → Scores and ranks top stories
-               → Sends you 3 picks on Telegram
+7:00 AM IST (daily)
+  └─ GitHub Actions: morning-pipeline.yml
+      └─ scrape → score → pick top 3 → generate brief → send Telegram message
 
-You reply     → "2, this matters because most AI tools ignore Indian languages"
-               → System generates post in your voice
-               → Sends you draft for approval
+You reply on Telegram (any natural language)
+  └─ Telegram webhook → Cloudflare Worker → GitHub Actions: bot-session.yml
+      └─ NLP parser → generate post + image (default) → send draft to Telegram
 
-You say "post" → Published to LinkedIn
-               → Confirmation with URL sent back
+You confirm the draft
+  └─ "post" / "looks good" / "go ahead" (any NLP)
+      └─ GitHub Actions publishes to LinkedIn
 ```
 
----
+## Features
 
-## Setup (One-Time)
+- **Daily research**: Scrapes HN, Reddit, GitHub Trending — scores and picks the best 3 stories for your audience
+- **NLP commands**: Reply in plain English. *"I like story 2, post it as carousel"* works.
+- **Image by default**: Every post comes with an auto-screenshot attached. Switch to text or carousel anytime.
+- **Format options**: Text post | Image post (auto-screenshot) | Carousel PDF
+- **Draft review**: See the post before it goes live. Edit, switch format, or cancel.
+- **Zero always-on infra**: Runs on GitHub Actions (free tier) + Cloudflare Workers (free tier). No servers, no credit card.
 
-### 1. Clone and install
+## Architecture
 
-```bash
-git clone <your-repo-url>
-cd linkedin-autopilot
-pip install -r requirements.txt
-python scripts/setup_fonts.py   # downloads Inter + Playfair Display
-```
+| Component | Technology | Cost |
+|---|---|---|
+| Daily pipeline | GitHub Actions (cron) | Free |
+| Bot responses | GitHub Actions (webhook dispatch) | Free |
+| Webhook bridge | Cloudflare Worker | Free |
+| State storage | GitHub Gist | Free |
+| LLM | Groq (primary), Mistral, Nvidia NIM | Free tiers |
 
-### 2. Copy env template
+## Setup
 
-```bash
-cp .env.example .env
-```
+### Prerequisites
 
-### 3. Get your API keys
+- GitHub account + this repo forked
+- Telegram bot (create via @BotFather)
+- LinkedIn Developer App (for the API token)
+- Cloudflare account (free, no card needed)
+- Groq API key (free at console.groq.com)
 
-**Groq (LLM + Whisper):**
-1. Go to [console.groq.com](https://console.groq.com)
-2. API Keys → Create Key
-3. Paste into `.env` as `GROQ_API_KEY`
+### 1. GitHub Secrets
 
-**Telegram Bot:**
-1. Open Telegram → search `@BotFather`
-2. `/newbot` → follow prompts → copy token
-3. Paste as `TELEGRAM_BOT_TOKEN`
-4. Message your new bot once, then visit:
-   `https://api.telegram.org/bot{TOKEN}/getUpdates`
-5. Find `"chat":{"id":XXXXXXXX}` → paste as `TELEGRAM_CHAT_ID`
+Go to **repo → Settings → Secrets and variables → Actions** and add:
 
-**LinkedIn:**
-1. Go to [developers.linkedin.com](https://www.linkedin.com/developers/apps)
-2. Create app → add products: **Share on LinkedIn** + **Sign In with LinkedIn**
-3. Under App settings, add redirect URL: `http://localhost:8080/callback`
-4. Add to `.env`: `LINKEDIN_CLIENT_ID` and `LINKEDIN_CLIENT_SECRET`
-5. Run the auth flow:
-   ```bash
-   python scripts/get_linkedin_token.py
-   ```
-   This opens a browser, you approve, token is saved automatically.
-
-**Reddit (optional — higher rate limits):**
-1. Go to [reddit.com/prefs/apps](https://www.reddit.com/prefs/apps)
-2. Create app → type: **script**
-3. Paste `client_id` and `client_secret` into `.env`
-
----
-
-## Running Locally
-
-```bash
-# Dry run (no Telegram or LinkedIn — just see what stories would be picked)
-python scripts/test_pipeline_dry_run.py
-
-# Full pipeline (starts at 07:00 AM IST daily)
-python main.py
-
-# Force-run pipeline immediately (for testing)
-RUN_NOW=true python main.py
-```
-
----
-
-## Telegram Commands
-
-| Command | What it does |
+| Secret | Description |
 |---|---|
-| `1` / `2` / `3` | Pick a story |
-| `2, your take here` | Pick + add your angle |
-| Voice note | Pick a story + speak your angle |
-| `post` | Publish the draft to LinkedIn |
-| `edit make it shorter` | Regenerate with instruction |
-| `carousel` / `image` / `text` | Switch format |
-| `skip` | Skip today |
-| `cancel` | Cancel after draft |
-| `status` | What's the system doing now |
-| `log` | Last 7 days of posts |
+| `TELEGRAM_BOT_TOKEN` | From @BotFather |
+| `TELEGRAM_CHAT_ID` | Your personal chat ID |
+| `GROQ_API_KEY` | From console.groq.com |
+| `GIST_TOKEN` | GitHub PAT with `gist` scope |
+| `GIST_ID` | ID of a Gist to use as state store |
+| `LINKEDIN_ACCESS_TOKEN` | LinkedIn OAuth token |
+| `LINKEDIN_PERSON_URN` | Your LinkedIn person URN |
+| `REDDIT_CLIENT_ID` | Reddit API app ID |
+| `REDDIT_CLIENT_SECRET` | Reddit API app secret |
+| `MISTRAL_API_KEY` | (optional) Mistral AI key |
+| `NVIDIA_NIM_API_KEY` | (optional) Nvidia NIM key |
 
----
-
-## Deployment on Render.com (Free)
-
-1. Push your repo to GitHub (`.env` is in `.gitignore` — never commits)
-2. Go to [render.com](https://render.com) → New → Background Worker
-3. Connect your GitHub repo
-4. Build command: `pip install -r requirements.txt && python scripts/setup_fonts.py`
-5. Start command: `python main.py`
-6. Set all environment variables from your `.env` in Render's dashboard
-7. Add a persistent disk (1GB free): mount path `/opt/render/project/src`
-8. Deploy
-
-Or use `render.yaml` (already included) for one-click deploy.
-
----
-
-## LinkedIn Token Refresh (Every 60 Days)
-
-LinkedIn access tokens expire every 60 days. The system will warn you at 55 days via Telegram.
-
-When you get the warning:
-```bash
-python scripts/refresh_linkedin_token.py
-```
-
----
-
-## Running Tests
+### 2. Create the Gist State Store
 
 ```bash
-# All tests
-pytest tests/ -v
-
-# Single module
-pytest tests/test_scorer.py -v
-
-# With coverage
-pytest tests/ --cov=. --cov-report=term-missing
-
-# Integration only
-pytest tests/test_pipeline.py -v -s
+python scripts/setup_gist_state.py
 ```
 
----
+### 3. Set Up the Webhook Bridge
 
-## Project Structure
+See [`cloudflare-worker/README.md`](cloudflare-worker/README.md) for the 5-minute setup. This is the step that makes the bot actually respond to your Telegram messages.
+
+### 4. Install Carousel Fonts (optional)
+
+```bash
+python scripts/setup_fonts.py
+```
+
+### 5. Get Your LinkedIn Token
+
+```bash
+python scripts/get_linkedin_token.py
+```
+
+LinkedIn tokens expire every 60 days. Re-run this when the bot warns you.
+
+## Usage
+
+The bot sends you a brief every morning at 7:00 AM IST:
+
+```
+good morning. here are today's picks.
+
+reply: [number] + your take (text or voice note)
+format suggestion is included — you can override.
+
+────────────────────────────────────────
+1. 🤖 openai releases o3-mini for free users
+   [hackernews] | trending 2.1k pts | 3h ago
+   format suggestion: image post
+
+2. ...
+```
+
+### Picking a Story
+
+Reply in any natural language:
+- `1` — pick story 1, image (default format)
+- `2 my take: this is overhyped` — pick story 2, include your angle
+- `I like story 3, make it a carousel` — NLP understood
+- `story 1, post it as text only` — override format to text
+- `skip` — skip today
+
+### After Draft is Sent
+
+- `post` / `go ahead` / `looks good` — publish to LinkedIn
+- `edit make it shorter` / `make it punchier` — regenerate with instruction
+- `carousel` / `image` / `text` — switch format
+- `cancel` / `drop it` — abandon
+
+### On-Demand Research
+
+```
+/research Apple Intelligence announcement — I think they're playing it safe
+```
+
+Researches the topic, generates a post, sends for review.
+
+## Local Development
+
+```bash
+# Install deps
+pip install -r requirements.txt
+python -m playwright install chromium
+
+# Copy env
+cp .env.example .env
+# Fill in your keys
+
+# Run the morning pipeline once
+python scripts/run_pipeline.py
+
+# Test bot session with a payload
+TELEGRAM_PAYLOAD='{"update_id":1,"message":{"message_id":1,"date":1700000000,"chat":{"id":YOUR_CHAT_ID,"type":"private"},"from":{"id":YOUR_CHAT_ID,"is_bot":false,"first_name":"Test"},"text":"1"}}' python scripts/run_bot_session.py
+```
+
+## Files
 
 ```
 linkedin-autopilot/
-├── main.py                    # Entry point — scheduler + Telegram bot
-├── config/settings.py         # ALL config, weights, personality prompt
-├── scraper/                   # Data collection
-│   ├── scraper.py             # Orchestrates all sources
-│   ├── deduplicator.py        # URL + fuzzy title dedup
-│   └── sources/               # HN, Reddit, RSS, Product Hunt, GitHub
-├── scorer/scorer.py           # Scoring, ranking, diversity pass
-├── generator/                 # Groq LLM calls
-│   ├── generator.py           # generate_post(), generate_morning_brief()
-│   └── prompts.py             # All prompt templates (constants)
-├── telegram_bot/              # Daily interface
-│   ├── bot.py                 # State machine, message handlers
-│   ├── voice_handler.py       # Voice note → Groq Whisper
-│   └── messages.py            # All message templates
-├── carousel/carousel_gen.py   # Pillow-based slide renderer → PDF
-├── linkedin/                  # LinkedIn API
-│   ├── poster.py              # UGC Posts API, PDF upload
-│   └── auth.py                # OAuth 2.0 flow
-├── scripts/                   # One-time setup + utilities
-├── tests/                     # 66 tests across 5 modules
-├── state/today.json           # Pipeline state (auto-managed)
-└── logs/                      # daily_log.json, streak.json, errors.log
+├── cloudflare-worker/       # Telegram webhook → GitHub Actions bridge
+│   ├── index.js
+│   └── README.md
+├── telegram_bot/            # Bot message handlers
+│   ├── bot.py               # Main handler logic + NLP
+│   ├── messages.py          # All Telegram message templates
+│   ├── screenshotter.py     # Auto-screenshot for image posts
+│   └── voice_handler.py     # Voice note transcription
+├── generator/               # LLM post generation
+│   ├── generator.py         # All LLM calls
+│   └── prompts.py           # All prompt templates
+├── scraper/                 # Story research
+│   ├── scraper.py           # Main scrape orchestrator
+│   ├── researcher.py        # On-demand topic research
+│   ├── enricher.py          # Full article text extraction
+│   └── deduplicator.py      # Fuzzy dedup
+├── scorer/                  # Story ranking
+│   └── scorer.py
+├── linkedin/                # LinkedIn API
+│   ├── poster.py            # Post text/image/carousel
+│   └── auth.py
+├── carousel/                # Carousel PDF generation
+│   └── carousel_gen.py
+├── scripts/                 # Utility scripts
+│   ├── run_pipeline.py      # GHA: morning pipeline entrypoint
+│   ├── run_bot_session.py   # GHA: bot session entrypoint
+│   ├── setup_gist_state.py
+│   ├── setup_fonts.py
+│   └── get_linkedin_token.py
+├── .github/workflows/
+│   ├── morning-pipeline.yml # Daily 7AM cron
+│   └── bot-session.yml      # Per-message webhook handler
+└── config/
+    └── settings.py          # All config + scoring weights
 ```
-
----
-
-## Customisation
-
-Everything is in `config/settings.py`:
-
-- **`POST_TIME`** — change the daily posting time (default 07:00)
-- **`INDIA_KEYWORDS`** — add cities or publications you follow
-- **`CAROUSEL_YOUR_HANDLE`** — your LinkedIn handle for carousel footers
-- **`PERSONALITY_PROMPT`** — the locked writing voice (edit carefully)
-- **Scoring weights** — `INDIA_BONUS`, `TOOL_LAUNCH_BONUS`, etc.
-
----
-
-## Cost
-
-| Component | Cost |
-|---|---|
-| Groq LLM + Whisper | Free tier (covers ~₹0 / day) |
-| Telegram Bot API | Free |
-| LinkedIn API | Free |
-| Render.com hosting | Free tier |
-| **Total** | **₹0 / month** |

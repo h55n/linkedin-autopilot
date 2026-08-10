@@ -108,28 +108,29 @@ RULES:
 
 
 def build_image_caption_prompt(story: dict, angle: str = None) -> str:
-    """Prompt for generating an image pair caption."""
+    """Prompt for generating a full LinkedIn post for an image post."""
     angle_section = ""
     if angle:
-        angle_section = f"\nYOUR ANGLE:\n{angle}\n"
+        angle_section = f"\nYOUR ANGLE (incorporate this perspective strongly):\n{angle}\n"
 
-    full_text_section = f"FULL ARTICLE TEXT (use this for depth and accuracy):\n{story['full_text'][:2000]}\n" if story.get('full_text') else ""
+    full_text_section = f"FULL ARTICLE TEXT (use this for depth and accuracy):\n{story['full_text'][:2500]}\n" if story.get('full_text') else ""
 
     return f"""{PERSONALITY_PROMPT}
 
 ---
 
-TASK: Act as a world-class conversion copywriter. Write a highly engaging and insightful LinkedIn caption for an image pair post about the story below.
+TASK: Act as a world-class LinkedIn copywriter. Write a FULL, COMPLETE, highly engaging LinkedIn post for the story below. This is an image post — the photo provides visual context, but your words must do the heavy lifting. Write for maximum reach and impact.
 
 COPYWRITING RULES:
-- Clarity Over Cleverness: Be clear, direct, and easy to understand.
-- Benefits Over Features: Focus on what the news means for the reader's outcomes.
-- Simple over complex: Use simple verbs ("use" not "utilize").
+- Hook first: Open with a single line that stops the scroll. A surprising fact, a bold claim, or a punchy question.
+- Benefits Over Features: Focus on what this means for the reader — not just what happened.
+- Simple over complex: Use simple verbs. Short sentences. Short paragraphs.
 - Active over passive voice.
-- Show, don't tell: Describe outcomes rather than using adverbs.
-- Engage the reader: Use rhetorical questions or analogies when helpful.
-- Avoid sensationalism, buzzwords, and fluff. Provide real substance.
-- Highlight Numbers: People love data. Extract and prominently feature impressive numbers, metrics, funding amounts, or statistics.
+- Show, don't tell: Describe outcomes and implications rather than just announcing the news.
+- Use rhetorical questions or analogies to make abstract ideas concrete.
+- Avoid sensationalism, buzzwords, and fluff. Provide real, meaty substance.
+- Highlight Numbers: Extract and prominently feature impressive stats, metrics, funding amounts, dates, or benchmarks.
+- Build tension, then release it: set up a problem, then reveal the insight.
 
 STORY TITLE: {story['title']}
 STORY URL: {story.get('url', '')}
@@ -137,12 +138,12 @@ STORY SUMMARY: {story.get('summary', '')}
 {full_text_section}
 {angle_section}
 OUTPUT RULES:
-- Return ONLY the caption text. No preamble.
-- 2 to 3 very short paragraphs.
-- CRITICAL: Separate each paragraph with an empty line (double newline, \n\n) for proper alignment.
-- Follow the lowercase rule from PERSONALITY_PROMPT exactly, ensuring short-form acronyms (AI, AICT, API, etc.) are ALWAYS capitalized.
-- Assume the reader might not look at the images — the caption must make sense alone.
-- Introduce the URL on its own line at the very end. CRITICAL: Extract and provide the ACTUAL official project, hackathon, event, or company website link mentioned in the text, NOT just the news source link. Vary the Call To Action naturally and conversationally (e.g., "Official link here: ", "Apply here: ", "Check out the project: ", etc.) followed by the extracted official URL (or the STORY URL if no official link exists).
+- Return ONLY the post text. No preamble, no "here's the post:", no quotes.
+- Write 5 to 8 short paragraphs. Each paragraph is 1–3 sentences max.
+- Structure: Hook → Context → Why it matters → Key insight or data → What readers should do or think.
+- CRITICAL: Separate every paragraph with a blank line (double newline, \n\n). LinkedIn needs this for readability.
+- Follow the lowercase rule from PERSONALITY_PROMPT exactly. Short-form acronyms (AI, API, ML, etc.) are ALWAYS capitalized.
+- End with the URL on its own line. CRITICAL: Provide the ACTUAL official project/event/company URL from the article text, NOT just the news source link. Vary the CTA naturally (e.g. "full details here:", "check it out:", "apply here:", "read the full announcement:") followed by the URL.
 """
 
 
@@ -171,23 +172,54 @@ OUTPUT RULES:
 """
 
 def build_intent_parser_prompt(text: str, picks: list[dict]) -> str:
-    """Prompt for parsing natural language intent into a story selection."""
+    """Prompt for parsing natural language story pick + format + angle."""
     picks_context = ""
     for i, p in enumerate(picks, 1):
-        picks_context += f"{i}. Title: {p.get('title', '')}\nFormat: {p.get('format_suggestion', 'unknown')}\nSummary: {p.get('summary', '')}\n\n"
+        picks_context += f"{i}. Title: {p.get('title', '')}\nSuggested format: {p.get('format_suggestion', 'text')}\nSummary: {p.get('summary', '')}\n\n"
 
     return f"""
-TASK: You are an intent parser. The user was presented with 3 story options and replied with natural language. 
-Determine WHICH story (1, 2, or 3) the user selected, and extract any custom angle/opinion they provided.
+TASK: You are an intent parser. The user was presented with 3 story options and replied with natural language.
+Extract: which story (1, 2, or 3) they picked, any format preference, and any custom angle/opinion.
 
 STORY OPTIONS:
 {picks_context}
 USER'S REPLY:
 {text}
 
+FORMAT VALUES: "image" | "carousel" | "text"
+Format keywords to recognise:
+- "image", "with image", "post image", "with a photo" → "image"
+- "carousel", "slides", "swipe" → "carousel"
+- "text", "text only", "no image", "just text" → "text"
+- If no format is mentioned → null (caller will use default)
+
 OUTPUT RULES:
-- Return ONLY valid JSON, no markdown formatting, no backticks, no explanations.
-- The JSON must have two keys: "story_num" and "angle".
-- "story_num": an integer (1, 2, or 3). If you cannot determine which story they meant, return null.
-- "angle": a string containing the user's specific angle, perspective, or instruction. If they only specified the story without an angle (e.g. "I want the first one"), return null.
+- Return ONLY valid JSON, no markdown, no backticks, no explanations.
+- JSON must have exactly three keys: "story_num", "angle", "format".
+- "story_num": integer 1-3, or null if cannot determine.
+- "angle": the user's perspective/opinion as a string, or null if none given.
+- "format": "image", "carousel", "text", or null.
+"""
+
+
+def build_action_intent_prompt(text: str) -> str:
+    """Prompt to classify user intent when reviewing a draft post."""
+    return f"""
+TASK: The user has been shown a draft LinkedIn post and replied with a message.
+Classify their intent into one of exactly four actions.
+
+USER'S REPLY:
+{text}
+
+ACTIONS:
+- "post" — they want to publish as-is. Keywords: post, publish, go, yes, looks good, send it, perfect, approved, do it, post it.
+- "edit" — they want changes. Keywords: edit, change, make it, fix, shorter, longer, different, tone, tweak, rewrite, rephrase, update.
+- "switch" — they want a different format. Keywords: carousel, image, text, switch, use instead, change format.
+- "cancel" — they want to abandon this post. Keywords: cancel, drop it, nevermind, forget it, stop, no.
+
+OUTPUT RULES:
+- Return ONLY valid JSON, no markdown, no backticks, no explanations.
+- JSON must have exactly two keys: "action" and "detail".
+- "action": one of "post", "edit", "switch", "cancel", or null if truly unclear.
+- "detail": for "edit" → the edit instruction string. For "switch" → the format string ("image"/"carousel"/"text"). Otherwise null.
 """

@@ -160,8 +160,8 @@ def _generate_image_caption(story: dict, angle: str = None) -> dict:
 
 import json
 
-def parse_pick_with_llm(text: str, picks: list[dict]) -> tuple[int, str | None] | None:
-    """Use LLM to parse natural language intent into a specific story choice."""
+def parse_pick_with_llm(text: str, picks: list[dict]) -> tuple[int, str | None, str | None] | None:
+    """Use LLM to parse natural language intent into story choice + format + angle."""
     try:
         from generator.prompts import build_intent_parser_prompt
         prompt = build_intent_parser_prompt(text, picks)
@@ -178,13 +178,43 @@ def parse_pick_with_llm(text: str, picks: list[dict]) -> tuple[int, str | None] 
         
         story_num = data.get("story_num")
         angle = data.get("angle")
+        format_override = data.get("format")  # NEW: extract format field
         
         if story_num is None or not isinstance(story_num, int):
             return None
+
+        # Validate format value
+        if format_override not in ("image", "carousel", "text", None):
+            format_override = None
             
-        return int(story_num), (str(angle) if angle else None)
+        return int(story_num), (str(angle) if angle else None), format_override
     except Exception as e:
         log_error("Failed to parse pick with LLM", e)
+        return None
+
+
+def classify_action_with_llm(text: str) -> dict | None:
+    """Classify draft-review intent: post / edit / switch / cancel."""
+    try:
+        from generator.prompts import build_action_intent_prompt
+        prompt = build_action_intent_prompt(text)
+        raw = _call_llm(prompt, max_tokens=100)
+
+        if raw.startswith("```json"):
+            raw = raw.replace("```json", "", 1)
+        if raw.endswith("```"):
+            raw = raw[:-3]
+        raw = raw.strip()
+
+        data = json.loads(raw)
+        action = data.get("action")
+        detail = data.get("detail")
+
+        if action not in ("post", "edit", "switch", "cancel", None):
+            return None
+        return {"action": action, "detail": detail}
+    except Exception as e:
+        log_error("Failed to classify action with LLM", e)
         return None
 
 
