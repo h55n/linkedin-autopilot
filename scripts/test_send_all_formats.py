@@ -24,6 +24,7 @@ from telegram.constants import ParseMode
 from telegram.request import HTTPXRequest
 from generator.generator import generate_post
 from carousel.carousel_gen import generate_carousel_pdf, generate_carousel_pngs
+from telegram_bot.screenshotter import take_screenshots_for_story
 from config.settings import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
 
 
@@ -64,14 +65,26 @@ async def main():
     # ── 2. IMAGE CAPTION POST ────────────────────────────────────
     print("Generating image caption post...")
     res = generate_post(STORY, "image", ANGLE)
-    await bot.send_message(
-        chat_id=chat,
-        text=(
-            f"🖼️ *TEST — IMAGE CAPTION*\n\n{res['post_text']}\n\n"
-            f"_[Take a screenshot of {STORY['url']} to attach]_"
-        ),
-        parse_mode=ParseMode.MARKDOWN,
-    )
+    print("Taking screenshot for image post...")
+    screenshot_paths = await take_screenshots_for_story(STORY)
+    if screenshot_paths:
+        await bot.send_message(
+            chat_id=chat,
+            text=f"🖼️ *TEST — IMAGE CAPTION*\n\n{res['post_text']}",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+        with open(screenshot_paths[0], "rb") as f:
+            await bot.send_photo(
+                chat_id=chat,
+                photo=f,
+                caption="[Auto-screenshot attached]"
+            )
+    else:
+        await bot.send_message(
+            chat_id=chat,
+            text=f"🖼️ *TEST — IMAGE CAPTION*\n\n{res['post_text']}\n\n_[Screenshot failed]_",
+            parse_mode=ParseMode.MARKDOWN,
+        )
     print("  [OK] Image caption sent")
 
     # ── 3. CAROUSEL POST ─────────────────────────────────────────

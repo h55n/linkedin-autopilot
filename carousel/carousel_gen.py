@@ -198,68 +198,15 @@ def _render_cover(slide_data: dict, total: int) -> Image.Image:
 
 
 def _render_content(slide_data: dict, slide_number: int, total: int) -> Image.Image:
-    """
-    Content slides — warm cream background.
-    Heading: centered (bold serif). Body: LEFT-ALIGNED for readability.
-    Highlight phrase shown as a callout chip below body.
-    """
-    img  = Image.new("RGB", (SIZE, SIZE), C["content_bg"])
+    img  = Image.new("RGB", (SIZE, SIZE), C["cover_bg"])
     draw = ImageDraw.Draw(img)
 
     heading   = slide_data.get("heading", "")
     body      = slide_data.get("body", "")
     highlight = slide_data.get("highlight_phrase", "")
 
-    # ── Slide number — top left ──────────────────────────────────
-    num_font = _body_font(F["slide_num_size"])
-    draw.text((CX, CY), f"{slide_number:02d}", font=num_font, fill=C["muted_text"])
-
-    # ── Slide counter — top right ────────────────────────────────
-    counter  = f"{slide_number + 1:02d} / {total:02d}"
-    ct_bbox  = draw.textbbox((0, 0), counter, font=num_font)
-    ct_w     = ct_bbox[2] - ct_bbox[0]
-    draw.text((SIZE - MARGIN - ct_w, CY), counter, font=num_font, fill=C["muted_text"])
-
-    # ── Thin rule below number row ───────────────────────────────
-    rule_y = CY + F["slide_num_size"] + 20
-    draw.rectangle([CX, rule_y, CX + CW, rule_y + 1], fill=C["muted_text"])
-
-    # ── Heading — centered ───────────────────────────────────────
-    head_font = _headline_content_font()
-    head_y    = rule_y + 36
-    head_h    = _text_height(draw, heading, head_font, CW)
-    _draw_centered_text(draw, heading, head_font, C["primary_text"], head_y, CW)
-
-    # ── Body — LEFT-ALIGNED for readability ─────────────────────
-    if body:
-        body_font = _body_font()
-        body_y    = head_y + head_h + 52
-
-        # Always render full body as clean left-aligned text
-        body_y = _draw_body_paragraphs_left(draw, body, body_font, C["body_text"], body_y)
-
-        # Highlight chip shown as a standalone callout below body
-        if highlight:
-            body_y += 36
-            _draw_highlight_chip(draw, highlight, body_font, body_y, CX, CW)
-
-    return img
-
-
-def _render_cta(slide_data: dict, slide_number: int, total: int) -> Image.Image:
-    """
-    CTA slide — warmer cream background.
-    Heading centered, body LEFT-ALIGNED, yellow highlight chip below.
-    """
-    img  = Image.new("RGB", (SIZE, SIZE), C["cta_bg"])
-    draw = ImageDraw.Draw(img)
-
-    heading   = slide_data.get("heading", "The bottom line")
-    body      = slide_data.get("body", "")
-    highlight = slide_data.get("highlight_phrase", "")
-
     # ── Slide counter — bottom right ────────────────────────────
-    num_font = _body_font(F["slide_num_size"])
+    num_font = _semibold_font(F["slide_num_size"])
     counter  = f"{slide_number + 1:02d} / {total:02d}"
     ct_bbox  = draw.textbbox((0, 0), counter, font=num_font)
     ct_w     = ct_bbox[2] - ct_bbox[0]
@@ -270,26 +217,106 @@ def _render_cta(slide_data: dict, slide_number: int, total: int) -> Image.Image:
     head_font = _headline_content_font()
     body_font = _body_font()
 
-    head_h = _text_height(draw, heading, head_font, CW)
-    body_h = _text_height_left(draw, body, body_font, CW) if body else 0
-    hl_h   = (_text_height_left(draw, highlight, body_font, CW - 40) + 48) if highlight else 0
+    head_h = _text_height(draw, heading, head_font, CW) if heading else 0
+    body_h = _text_height(draw, body, body_font, CW) if body else 0
+    hl_h   = (_text_height(draw, highlight, body_font, CW - 40) + 48) if highlight else 0
 
     gap1, gap2 = 44, 36
-    total_block = head_h + gap1 + body_h + (gap2 + hl_h if highlight else 0)
+    total_block = (head_h + gap1 if head_h else 0) + body_h + (gap2 + hl_h if highlight else 0)
     start_y = (SIZE - total_block) // 2
 
-    # Heading centered
-    _draw_centered_text(draw, heading, head_font, C["primary_text"], start_y, CW)
-    y = start_y + head_h + gap1
+    y = start_y
+    if heading:
+        _draw_centered_text(draw, heading, head_font, C["primary_text"], y, CW)
+        y += head_h + gap1
 
-    # Body left-aligned
     if body:
-        y = _draw_body_paragraphs_left(draw, body, body_font, C["body_text"], y)
-        y += gap2
+        _draw_centered_text(draw, body, body_font, C["body_text"], y, CW)
+        y += body_h + gap2
 
-    # Highlight chip
     if highlight:
-        _draw_highlight_chip(draw, highlight, body_font, y, CX, CW)
+        # draw centered highlight chip
+        lines    = _wrap_text(draw, highlight, body_font, CW - 40)
+        pad_h    = 18
+        pad_v    = 10
+        radius   = 8
+        line_h   = _get_line_height(body_font)
+        
+        for line in lines:
+            bbox   = draw.textbbox((0, 0), line, font=body_font)
+            text_w = bbox[2] - bbox[0]
+            x_offset = CX + (CW - text_w - pad_h * 2) // 2
+            rect   = [
+                x_offset,
+                y - pad_v,
+                x_offset + text_w + pad_h * 2,
+                y + body_font.size + pad_v,
+            ]
+            draw.rounded_rectangle(rect, radius=radius, fill=C["highlight_yellow"])
+            draw.text((x_offset + pad_h, y), line, font=body_font, fill=C["primary_text"])
+            y += line_h + pad_v
+
+    return img
+
+
+def _render_cta(slide_data: dict, slide_number: int, total: int) -> Image.Image:
+    img  = Image.new("RGB", (SIZE, SIZE), C["cover_bg"])
+    draw = ImageDraw.Draw(img)
+
+    heading   = slide_data.get("heading", "")
+    body      = slide_data.get("body", "")
+    highlight = slide_data.get("highlight_phrase", "")
+
+    # ── Slide counter — bottom right ────────────────────────────
+    num_font = _semibold_font(F["slide_num_size"])
+    counter  = f"{slide_number + 1:02d} / {total:02d}"
+    ct_bbox  = draw.textbbox((0, 0), counter, font=num_font)
+    ct_w     = ct_bbox[2] - ct_bbox[0]
+    draw.text((SIZE - MARGIN - ct_w, SIZE - MARGIN - F["slide_num_size"]),
+              counter, font=num_font, fill=C["muted_text"])
+
+    # ── Vertically center the content block ──────────────────────
+    head_font = _headline_content_font()
+    body_font = _body_font()
+
+    head_h = _text_height(draw, heading, head_font, CW) if heading else 0
+    body_h = _text_height(draw, body, body_font, CW) if body else 0
+    hl_h   = (_text_height(draw, highlight, body_font, CW - 40) + 48) if highlight else 0
+
+    gap1, gap2 = 44, 36
+    total_block = (head_h + gap1 if head_h else 0) + body_h + (gap2 + hl_h if highlight else 0)
+    start_y = (SIZE - total_block) // 2
+
+    y = start_y
+    if heading:
+        _draw_centered_text(draw, heading, head_font, C["primary_text"], y, CW)
+        y += head_h + gap1
+
+    if body:
+        _draw_centered_text(draw, body, body_font, C["body_text"], y, CW)
+        y += body_h + gap2
+
+    if highlight:
+        # draw centered highlight chip
+        lines    = _wrap_text(draw, highlight, body_font, CW - 40)
+        pad_h    = 18
+        pad_v    = 10
+        radius   = 8
+        line_h   = _get_line_height(body_font)
+        
+        for line in lines:
+            bbox   = draw.textbbox((0, 0), line, font=body_font)
+            text_w = bbox[2] - bbox[0]
+            x_offset = CX + (CW - text_w - pad_h * 2) // 2
+            rect   = [
+                x_offset,
+                y - pad_v,
+                x_offset + text_w + pad_h * 2,
+                y + body_font.size + pad_v,
+            ]
+            draw.rounded_rectangle(rect, radius=radius, fill=C["highlight_yellow"])
+            draw.text((x_offset + pad_h, y), line, font=body_font, fill=C["primary_text"])
+            y += line_h + pad_v
 
     return img
 
