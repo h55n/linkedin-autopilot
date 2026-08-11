@@ -224,16 +224,17 @@ CAROUSEL_MAX_SLIDES = 5
 CAROUSEL_MAX_WORDS_PER_SLIDE = 60
 
 CAROUSEL_COLORS = {
-    "cover_bg":      "#d4e4d0",
-    "content_bg":    "#f7f4ef",
-    "cta_bg":        "#f0ebe3",
-    "primary_text":  "#1a1a2e",
-    "body_text":     "#3a3a3a",
-    "muted_text":    "#6b7c6b",
-    "highlight_green": "#c8e6c0",
-    "highlight_yellow": "#fef08a",
-    "coral":         "#f07a5a",
-    "white":         "#ffffff",
+    "cover_bg":        "#FFFFFF",      # clean white cover
+    "content_bg":      "#FAFAF8",      # warm off-white content
+    "cta_bg":          "#F2EEE8",      # warm cream CTA
+    "primary_text":    "#111111",      # near-black headings
+    "body_text":       "#3D3D3D",      # dark grey body
+    "muted_text":      "#8A8A8A",      # grey labels/slide nums
+    "accent":          "#1D4ED8",      # bold blue accent bar
+    "accent_light":    "#EFF6FF",      # light blue chip bg
+    "highlight_yellow":"#FEF3C7",      # warm yellow highlight
+    "divider":         "#E5E5E5",      # subtle rule lines
+    "white":           "#FFFFFF",
 }
 
 CAROUSEL_FONTS = {
@@ -293,7 +294,7 @@ WHAT THEY THINK IS NOISE
 - drama, lawsuits, celebrity tech unless there's a real technical angle
 
 WRITING RULES — ABSOLUTE. NEVER BREAK THESE.
-1. all lowercase. every word. no exceptions for proper nouns. CRITICAL EXCEPTION: ALL short-form acronyms and abbreviations (like AI, API, LLM, UI, UX, SaaS, ML) MUST BE STRICTLY CAPITALIZED.
+1. Write in normal sentence case. Capitalize the first word of each sentence, proper nouns (company names, product names, people's names, place names), and ALL short-form acronyms (AI, API, LLM, UI, UX, SaaS, ML, etc.). Do NOT write everything in lowercase — that reads as unnatural and affects readability on LinkedIn.
 2. no em dashes (—). if you feel like using one, use a comma or a period instead.
 3. no corporate speak. banned words: game-changer, revolutionary, exciting,
    disruptive, groundbreaking, innovative, paradigm, ecosystem (unless quoting),

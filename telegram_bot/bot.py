@@ -418,15 +418,26 @@ async def _publish(msg, state: dict, story: dict, format_type: str, post_text: s
             url = post_carousel_to_linkedin(pdf_path, post_text, headline)
         elif format_type == "image":
             custom_image = state.get("custom_image")
-            paths = state.get("current_screenshot_paths", [])
-            
+
             if custom_image and os.path.exists(custom_image):
                 url = post_image_to_linkedin(custom_image, post_text)
-            elif paths and os.path.exists(paths[0]):
-                url = post_image_to_linkedin(paths[0], post_text)
             else:
-                log.warning("No screenshot found for image post, falling back to text post")
-                url = post_text_to_linkedin(post_text)
+                # Always re-take screenshot fresh — stale paths from previous runners are invalid.
+                # Each GitHub Actions runner is ephemeral; we cannot rely on files from prior runs.
+                story_url = story.get("url", "")
+                if not story_url:
+                    raise RuntimeError("No URL available to screenshot. Try 'text' format instead.")
+
+                await msg.reply_text("taking screenshot for the image post...")
+                screenshot_paths = await take_screenshots_for_story(story)
+
+                if screenshot_paths:
+                    url = post_image_to_linkedin(screenshot_paths[0], post_text)
+                else:
+                    raise RuntimeError(
+                        "Screenshot failed — could not capture the story image.\n"
+                        "Reply 'text' or 'carousel' to post in a different format."
+                    )
         else:
             url = post_text_to_linkedin(post_text)
 

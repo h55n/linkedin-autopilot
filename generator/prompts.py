@@ -39,9 +39,9 @@ REGION: {story.get('region', 'global')}
 {angle_section}
 OUTPUT RULES:
 - Return ONLY the post text. No preamble, no "here's the post:", no quotes around it.
-- 2 to 4 very short paragraphs/sentences.
-- CRITICAL: Separate each sentence/paragraph with an empty line (double newline, \n\n) for proper alignment.
-- Follow the lowercase rule from PERSONALITY_PROMPT exactly, ensuring short-form acronyms (AI, AICT, API, etc.) are ALWAYS capitalized.
+- 2 to 4 short punchy paragraphs/sentences.
+- CRITICAL: Separate each sentence/paragraph with an empty line (double newline, \n\n) for proper LinkedIn readability.
+- Write in normal sentence case: capitalize first word, proper nouns, brand names, and acronyms. Do NOT write in all-lowercase.
 - Introduce the URL on its own line at the very end. CRITICAL: Extract and provide the ACTUAL official project, hackathon, event, or company website link mentioned in the text, NOT just the news source link. Vary the Call To Action naturally and conversationally (e.g., "Official link here: ", "Apply here: ", "Check out the project: ", etc.) followed by the extracted official URL (or the STORY URL if no official link exists).
 """
 
@@ -142,7 +142,7 @@ OUTPUT RULES:
 - Write 5 to 8 short paragraphs. Each paragraph is 1–3 sentences max.
 - Structure: Hook → Context → Why it matters → Key insight or data → What readers should do or think.
 - CRITICAL: Separate every paragraph with a blank line (double newline, \n\n). LinkedIn needs this for readability.
-- Follow the lowercase rule from PERSONALITY_PROMPT exactly. Short-form acronyms (AI, API, ML, etc.) are ALWAYS capitalized.
+- Write in normal sentence case: capitalize first word, proper nouns, brand names, and acronyms (AI, API, ML, etc.). Do NOT write in all-lowercase.
 - End with the URL on its own line. CRITICAL: Provide the ACTUAL official project/event/company URL from the article text, NOT just the news source link. Vary the CTA naturally (e.g. "full details here:", "check it out:", "apply here:", "read the full announcement:") followed by the URL.
 """
 
@@ -168,7 +168,7 @@ URL: {story.get('url', '')}
 OUTPUT RULES:
 - Return ONLY the revised post text. No preamble.
 - Apply the edit instruction faithfully, thinking like a copywriter.
-- Keep all writing rules (mostly lowercase except for acronyms, no em dashes, max 3 sentences for text posts).
+- Keep all writing rules (normal sentence case, no em dashes, no exclamation marks for text posts).
 """
 
 def build_intent_parser_prompt(text: str, picks: list[dict]) -> str:
