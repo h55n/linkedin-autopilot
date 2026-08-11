@@ -14,7 +14,6 @@ load_dotenv()
 # ─────────────────────────────────────────────────────────────────
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
-MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY", "")
 NVIDIA_NIM_API_KEY = os.getenv("NVIDIA_NIM_API_KEY", "")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = int(os.getenv("TELEGRAM_CHAT_ID") or "0")
@@ -43,7 +42,6 @@ SKIP_AFTER_MINUTES = 120       # skip day 2h after brief
 # ─────────────────────────────────────────────────────────────────
 
 GROQ_MODEL = "llama-3.3-70b-versatile"
-MISTRAL_MODEL = "mistral-large-latest"
 NVIDIA_NIM_MODEL = "meta/llama-3.1-70b-instruct"
 GROQ_TEMPERATURE = 0.72
 GROQ_MAX_TOKENS_TEXT = 600

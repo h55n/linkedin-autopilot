@@ -21,7 +21,6 @@ from generator.prompts import (
 from config.settings import (
     GROQ_API_KEY, GROQ_MODEL, GROQ_TEMPERATURE,
     GROQ_MAX_TOKENS_TEXT, GROQ_MAX_TOKENS_CAROUSEL,
-    MISTRAL_API_KEY, MISTRAL_MODEL,
     NVIDIA_NIM_API_KEY, NVIDIA_NIM_MODEL,
 )
 from scraper.enricher import enrich_story
@@ -260,31 +259,6 @@ def _should_retry_http_error(retry_state):
             return False
     return True
 
-@retry(stop=stop_after_attempt(2), wait=wait_exponential(multiplier=1, min=1, max=4), retry=_should_retry_http_error)
-def _call_mistral(prompt: str, max_tokens: int = 600) -> str:
-    """Call Mistral LLM and return the text response. Retries on failure."""
-    if not MISTRAL_API_KEY:
-        raise ValueError("Mistral API key not configured")
-        
-    try:
-        response = httpx.post(
-            "https://api.mistral.ai/v1/chat/completions",
-            headers={"Authorization": f"Bearer {MISTRAL_API_KEY}"},
-            json={
-                "model": MISTRAL_MODEL,
-                "messages": [{"role": "user", "content": prompt}],
-                "temperature": GROQ_TEMPERATURE,
-                "max_tokens": max_tokens,
-            },
-            timeout=7.0
-        )
-        response.raise_for_status()
-        return response.json()["choices"][0]["message"]["content"].strip()
-    except Exception as e:
-        log_error("Mistral API call failed", e)
-        raise
-
-
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=4))
 def _call_groq(prompt: str, max_tokens: int = 600) -> str:
     """Call Groq LLM and return the text response. Retries on failure."""
@@ -328,16 +302,12 @@ def _call_nvidia(prompt: str, max_tokens: int = 600) -> str:
 
 
 def _call_llm(prompt: str, max_tokens: int = 600) -> str:
-    """Call Nvidia NIM first, fallback to Mistral, then fallback to Groq."""
+    """Call Nvidia NIM first, fallback to Groq."""
     try:
         return _call_nvidia(prompt, max_tokens=max_tokens)
     except Exception as e1:
-        log.warning(f"Nvidia NIM failed, falling back to Mistral: {e1}")
-        try:
-            return _call_mistral(prompt, max_tokens=max_tokens)
-        except Exception as e2:
-            log.warning(f"Mistral failed, falling back to Groq: {e2}")
-            return _call_groq(prompt, max_tokens=max_tokens)
+        log.warning(f"Nvidia NIM failed, falling back to Groq: {e1}")
+        return _call_groq(prompt, max_tokens=max_tokens)
 
 
 # ─────────────────────────────────────────────────────────────────
