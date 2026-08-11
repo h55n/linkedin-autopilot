@@ -99,7 +99,7 @@ JSON FORMAT (return exactly this structure):
 RULES:
 - Maximum 5 slides total (including cover).
 - No em dashes, no exclamation marks, no hashtags.
-- Each slide body: max 40 words.
+- Each slide body: write 30 to 50 words of rich, explanatory detail. Do not write one-liners.
 - intro_text: 1 sentence, creates curiosity gap.
 - IMPORTANT: the `body` fields MUST contain double newlines (`\\n\\n`) to separate sentences into short paragraphs.
 - Do NOT use all lowercase. Use natural Title Case for cover headings, and Sentence case for subheadings and body text.
