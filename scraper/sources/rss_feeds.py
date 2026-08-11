@@ -9,7 +9,7 @@ import requests
 from utils.logger import get_logger
 from utils.helpers import url_to_id, timestamp_to_age_hours, is_tool_launch, detect_region, get_http_session
 from config.settings import (
-    RSS_FEEDS, REQUEST_TIMEOUT, REQUEST_USER_AGENT, MAX_AGE_HOURS
+    RSS_FEEDS, REQUEST_TIMEOUT, REQUEST_USER_AGENT, MAX_AGE_HOURS, MAX_AGE_HOURS_OPPORTUNITIES
 )
 
 log = get_logger("scraper.rss")
@@ -84,7 +84,8 @@ def _parse_entry(entry, source_key: str, is_india: bool) -> dict | None:
         timestamp = int(time.time())
 
     age_hours = timestamp_to_age_hours(timestamp)
-    if age_hours > MAX_AGE_HOURS:
+    max_age = MAX_AGE_HOURS_OPPORTUNITIES if source_key in ('gnews_ai_hackathons', 'gnews_fellowships', 'gnews_programs') else MAX_AGE_HOURS
+    if age_hours > max_age:
         return None
 
     # Summary from description or content

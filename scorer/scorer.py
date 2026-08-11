@@ -63,14 +63,14 @@ def rank_and_pick(stories: list[dict]) -> list[dict]:
     scored.sort(key=lambda s: s["final_score"], reverse=True)
 
     # Mix pass: ensure 1 Opportunity, 1 India, 1 General
-    top3 = _mix_pass(scored)
+    top5 = _mix_pass(scored)
 
     # Attach format suggestion
-    for story in top3:
+    for story in top5:
         story["format_suggestion"] = suggest_format(story)
 
-    log.info(f"Top 3 picks: {[s['title'][:50] for s in top3]}")
-    return top3
+    log.info(f"Top 5 picks: {[s['title'][:50] for s in top5]}")
+    return top5
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -151,6 +151,14 @@ def _recency_multiplier(age_hours: float) -> float:
     return 0.5
 
 
+
+def _is_fellowship_story(story: dict) -> bool:
+    """
+    Returns True if the story is about a fellowship, scholarship, or grant.
+    """
+    text = f"{story.get('title', '')} {story.get('summary', '')}".lower()
+    return "fellowship" in text or "scholarship" in text or "grant" in text
+
 # ─────────────────────────────────────────────────────────────────
 # MIX PASS HELPERS
 # ─────────────────────────────────────────────────────────────────
@@ -188,57 +196,73 @@ def _is_hackathon_story(story: dict) -> bool:
     return True
 
 
+
+def _is_fellowship_story(story: dict) -> bool:
+    """
+    Returns True if the story is about a fellowship, scholarship, or grant.
+    """
+    text = f"{story.get('title', '')} {story.get('summary', '')}".lower()
+    return "fellowship" in text or "scholarship" in text or "grant" in text
+
 # ─────────────────────────────────────────────────────────────────
 # MIX PASS
+
 # ─────────────────────────────────────────────────────────────────
 
 def _mix_pass(scored: list[dict]) -> list[dict]:
     """
-    Enforce exactly 3 content slots:
-    1. Tool / Agent / AI System  — GitHub repos, launches, new models, SDKs
-    2. Prominent Hackathon       — Active hackathon with real prizes/impact
-    3. Trending AI News OR Fellowship — Market-moving news or a notable grant
+    Enforce exactly 5 content slots:
+    1. Fellowship (India or global)
+    2. Hackathon 1 (India or online)
+    3. Hackathon 2
+    4. AI / Tech News or Tool 1
+    5. AI / Tech News or Tool 2
     """
-    top3 = []
+    top5 = []
     picked_ids = set()
 
-    # Slot 1: Tool / Agent / AI System
+    # Slot 1: Fellowship
     for s in scored:
-        if _is_tool_story(s) and s["id"] not in picked_ids:
-            top3.append(s)
+        if _is_fellowship_story(s) and s["id"] not in picked_ids:
+            top5.append(s)
             picked_ids.add(s["id"])
-            log.info(f"Mix pass slot 1 (Tool/Agent): '{s['title'][:50]}'")
+            log.info(f"Mix pass slot 1 (Fellowship): '{s['title'][:50]}'")
             break
 
-    # Slot 2: Prominent Hackathon
+    # Slot 2 & 3: Hackathons
+    hackathon_count = 0
     for s in scored:
         if _is_hackathon_story(s) and s["id"] not in picked_ids:
-            top3.append(s)
+            top5.append(s)
             picked_ids.add(s["id"])
-            log.info(f"Mix pass slot 2 (Hackathon): '{s['title'][:50]}'")
-            break
+            hackathon_count += 1
+            log.info(f"Mix pass slot {1 + hackathon_count} (Hackathon): '{s['title'][:50]}'")
+            if hackathon_count >= 2:
+                break
 
-    # Slot 3: Trending AI News OR Fellowship
-    # Take the highest-scoring remaining story (anything that isn't already picked)
+    # Slot 4 & 5: Tech News / Tools
+    news_count = 0
     for s in scored:
         if s["id"] not in picked_ids:
-            top3.append(s)
+            top5.append(s)
             picked_ids.add(s["id"])
-            log.info(f"Mix pass slot 3 (News/Fellowship): '{s['title'][:50]}'")
-            break
+            news_count += 1
+            log.info(f"Mix pass slot {1 + hackathon_count + news_count} (News/Tool): '{s['title'][:50]}'")
+            if news_count >= 2:
+                break
 
-    # Fallback: if any slot came up empty, fill with best remaining stories
+    # Fallback: if any slots came up empty (e.g. no hackathons found), fill up to 5 with best remaining
     for s in scored:
-        if len(top3) >= 3:
+        if len(top5) >= 5:
             break
         if s["id"] not in picked_ids:
-            top3.append(s)
+            top5.append(s)
             picked_ids.add(s["id"])
             log.info(f"Mix pass fallback: '{s['title'][:50]}'")
 
     # Present in score order (highest score first) so the brief feels natural
-    top3.sort(key=lambda x: x.get("final_score", 0), reverse=True)
-    return top3
+    top5.sort(key=lambda x: x.get("final_score", 0), reverse=True)
+    return top5
 
 
 # ─────────────────────────────────────────────────────────────────

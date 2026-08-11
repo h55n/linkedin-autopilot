@@ -92,7 +92,7 @@ def generate_post_with_edit(
 
 def generate_morning_brief(picks: list[dict]) -> str:
     """
-    Format the morning Telegram message with the top 3 picks.
+    Format the morning Telegram message with the top 5 picks.
     This does NOT call the LLM — it's pure formatting.
     """
     lines = [
@@ -108,7 +108,7 @@ def generate_morning_brief(picks: list[dict]) -> str:
         "image": "image pair (before/after)",
     }
 
-    for i, story in enumerate(picks[:3], start=1):
+    for i, story in enumerate(picks[:5], start=1):
         emoji = emoji_for_story(story)
         title = story["title"].lower()
         source = format_source_label(story.get("source", ""))

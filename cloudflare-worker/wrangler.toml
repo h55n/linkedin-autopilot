@@ -1,0 +1,7 @@
+name = "linkedin-autopilot-bridge"
+main = "index.js"
+compatibility_date = "2024-02-12"
+
+[vars]
+GITHUB_OWNER = "h55n"
+GITHUB_REPO = "linkedin-autopilot"

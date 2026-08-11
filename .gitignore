@@ -44,3 +44,5 @@ scripts/scratch/
 .vscode/
 .idea/
 *.swp
+.wrangler/
+

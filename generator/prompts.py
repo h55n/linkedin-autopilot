@@ -178,8 +178,8 @@ def build_intent_parser_prompt(text: str, picks: list[dict]) -> str:
         picks_context += f"{i}. Title: {p.get('title', '')}\nSuggested format: {p.get('format_suggestion', 'text')}\nSummary: {p.get('summary', '')}\n\n"
 
     return f"""
-TASK: You are an intent parser. The user was presented with 3 story options and replied with natural language.
-Extract: which story (1, 2, or 3) they picked, any format preference, and any custom angle/opinion.
+TASK: You are an intent parser. The user was presented with 5 story options and replied with natural language.
+Extract: which story (1, 2, 3, 4, or 5) they picked, any format preference, and any custom angle/opinion.
 
 STORY OPTIONS:
 {picks_context}
@@ -196,7 +196,7 @@ Format keywords to recognise:
 OUTPUT RULES:
 - Return ONLY valid JSON, no markdown, no backticks, no explanations.
 - JSON must have exactly three keys: "story_num", "angle", "format".
-- "story_num": integer 1-3, or null if cannot determine.
+- "story_num": integer 1-5, or null if cannot determine.
 - "angle": the user's perspective/opinion as a string, or null if none given.
 - "format": "image", "carousel", "text", or null.
 """

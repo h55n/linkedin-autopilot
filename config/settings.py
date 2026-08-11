@@ -61,7 +61,8 @@ REDDIT_MIN_SCORE = 200         # skip Reddit posts below this (most subs)
 REDDIT_STARTUPS_MIN_SCORE = 150
 REDDIT_TOP_PER_SUB = 10
 GITHUB_TRENDING_TOP = 5
-MAX_AGE_HOURS = 24             # skip stories older than this
+MAX_AGE_HOURS = 24
+MAX_AGE_HOURS_OPPORTUNITIES = 720  # 30 days for hackathons/fellowships             # skip stories older than this
 REQUEST_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 FUZZY_DEDUP_THRESHOLD = 85     # % similarity to consider duplicate
 
@@ -90,8 +91,8 @@ RSS_FEEDS = {
     "venturebeat_ai": "https://venturebeat.com/category/ai/feed/",
     "betalist":       "https://betalist.com/feed",
     # Events & Opportunities (Actual Hackathons, Fellowships, Programs)
-    "gnews_ai_hackathons": "https://news.google.com/rss/search?q=AI+hackathon+when:7d&hl=en-US&gl=US&ceid=US:en",
-    "gnews_fellowships":   "https://news.google.com/rss/search?q=AI+fellowship+OR+tech+fellowship+when:7d&hl=en-US&gl=US&ceid=US:en",
+    "gnews_ai_hackathons": "https://news.google.com/rss/search?q=hackathon+AI+OR+tech+OR+India+OR+online+when:30d&hl=en-IN&gl=IN&ceid=IN:en",
+    "gnews_fellowships":   "https://news.google.com/rss/search?q=fellowship+AI+OR+tech+OR+India+OR+global+when:30d&hl=en-IN&gl=IN&ceid=IN:en",
     "gnews_programs":      "https://news.google.com/rss/search?q=student+developer+program+OR+competitive+coding+event+when:7d&hl=en-US&gl=US&ceid=US:en",
 }
 

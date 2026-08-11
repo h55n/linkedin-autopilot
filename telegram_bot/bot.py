@@ -154,7 +154,7 @@ async def _handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await msg.reply_text(
                 "not sure which story you picked. reply with:\n"
-                "1, 2, or 3 — or just say which one you like (e.g. 'I like story 2')\n"
+                "a number from 1 to 5 — or just say which one you like (e.g. 'I like story 2')\n"
                 "add your take after the number, or say 'skip' to skip today."
             )
         return
