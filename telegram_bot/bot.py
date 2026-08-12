@@ -590,8 +590,8 @@ def _parse_pick(text: str, picks: list[dict]) -> tuple[int, str | None, str | No
         from generator.generator import parse_pick_with_llm
         result = parse_pick_with_llm(text, picks)
         if result:
-            # result is (story_num, angle, format_override) — pass all through
-            return result[0], result[1], result[2]
+            # result is (story_num, angle) — default format_override to None
+            return result[0], result[1], None
     except Exception as e:
         log.error(f"LLM parsing fallback failed: {e}")
 

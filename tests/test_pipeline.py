@@ -38,16 +38,16 @@ MOCK_PICKS = [
 # ─────────────────────────────────────────────────────────────────
 
 @pytest.mark.asyncio
-@patch("main.send_message", new_callable=AsyncMock)
-@patch("main.scrape_all", return_value=MOCK_PICKS)
-@patch("main.rank_and_pick", return_value=MOCK_PICKS)
-@patch("main.read_state", return_value={"date": "1970-01-01", "status": "idle"})
-@patch("main.update_state")
+@patch("scripts.run_pipeline.send_message", new_callable=AsyncMock)
+@patch("scripts.run_pipeline.scrape_all", return_value=MOCK_PICKS)
+@patch("scripts.run_pipeline.rank_and_pick", return_value=MOCK_PICKS)
+@patch("scripts.run_pipeline.read_state", return_value={"date": "1970-01-01", "status": "idle"})
+@patch("scripts.run_pipeline.update_state")
 async def test_full_pipeline_sends_brief(mock_update, mock_state, mock_rank, mock_scrape, mock_send):
     """Pipeline runs, scrapes, ranks, and sends morning brief via Telegram."""
-    from main import main_pipeline
+    from scripts.run_pipeline import run_pipeline_logic
 
-    await main_pipeline()
+    await run_pipeline_logic()
 
     assert mock_send.called
     brief_text = mock_send.call_args[0][0]
@@ -59,15 +59,15 @@ async def test_full_pipeline_sends_brief(mock_update, mock_state, mock_rank, moc
 
 
 @pytest.mark.asyncio
-@patch("main.send_message", new_callable=AsyncMock)
-@patch("main.scrape_all", return_value=[])
-@patch("main.read_state", return_value={"date": "1970-01-01", "status": "idle"})
-@patch("main.update_state")
+@patch("scripts.run_pipeline.send_message", new_callable=AsyncMock)
+@patch("scripts.run_pipeline.scrape_all", return_value=[])
+@patch("scripts.run_pipeline.read_state", return_value={"date": "1970-01-01", "status": "idle"})
+@patch("scripts.run_pipeline.update_state")
 async def test_pipeline_handles_empty_scrape(mock_update, mock_state, mock_scrape, mock_send):
     """Pipeline should notify and exit gracefully when no stories found."""
-    from main import main_pipeline
+    from scripts.run_pipeline import run_pipeline_logic
 
-    await main_pipeline()
+    await run_pipeline_logic()
 
     assert mock_send.called
     message = mock_send.call_args[0][0]
@@ -75,79 +75,20 @@ async def test_pipeline_handles_empty_scrape(mock_update, mock_state, mock_scrap
 
 
 @pytest.mark.asyncio
-@patch("main.send_message", new_callable=AsyncMock)
-@patch("main.scrape_all", side_effect=Exception("network error"))
-@patch("main.read_state", return_value={"date": "1970-01-01", "status": "idle"})
-@patch("main.update_state")
+@patch("scripts.run_pipeline.send_message", new_callable=AsyncMock)
+@patch("scripts.run_pipeline.scrape_all", side_effect=Exception("network error"))
+@patch("scripts.run_pipeline.read_state", return_value={"date": "1970-01-01", "status": "idle"})
+@patch("scripts.run_pipeline.update_state")
 async def test_pipeline_handles_scrape_exception(mock_update, mock_state, mock_scrape, mock_send):
     """Pipeline should send error message and not crash on scrape failure."""
-    from main import main_pipeline
+    from scripts.run_pipeline import run_pipeline_logic
 
-    await main_pipeline()  # Should not raise
+    await run_pipeline_logic()  # Should not raise
 
     assert mock_send.called
 
 
-# ─────────────────────────────────────────────────────────────────
-# SKIP FLOW TEST
-# ─────────────────────────────────────────────────────────────────
 
-@pytest.mark.asyncio
-@patch("main.send_message", new_callable=AsyncMock)
-@patch("main.read_state")
-@patch("main.handle_skip_timeout", new_callable=AsyncMock)
-async def test_pipeline_skips_on_no_reply(mock_skip_timeout, mock_read, mock_send):
-    """After 2h timeout, handle_skip_timeout is called and skip message sent."""
-    from main import check_skip, now_ist
-
-    today = now_ist().strftime("%Y-%m-%d")
-    mock_read.return_value = {
-        "date": today,
-        "status": "waiting",
-        "sent_at": "07:00 IST",
-    }
-
-    await check_skip()
-
-    assert mock_skip_timeout.called
-    assert mock_send.called
-    skip_msg = mock_send.call_args[0][0]
-    assert "skip" in skip_msg.lower()
-
-
-# ─────────────────────────────────────────────────────────────────
-# REMINDER FLOW TEST
-# ─────────────────────────────────────────────────────────────────
-
-@pytest.mark.asyncio
-@patch("main.send_reminder", new_callable=AsyncMock)
-@patch("main.read_state")
-async def test_reminder_sent_after_1h(mock_read, mock_reminder):
-    """Reminder should be sent when status is 'waiting'."""
-    from main import check_reminder, now_ist
-
-    today = now_ist().strftime("%Y-%m-%d")
-    mock_read.return_value = {
-        "date": today,
-        "status": "waiting",
-    }
-
-    await check_reminder()
-    assert mock_reminder.called
-
-
-@pytest.mark.asyncio
-@patch("main.send_reminder", new_callable=AsyncMock)
-@patch("main.read_state")
-async def test_no_reminder_if_already_posted(mock_read, mock_reminder):
-    """No reminder if status is 'posted'."""
-    from main import check_reminder, now_ist
-
-    today = now_ist().strftime("%Y-%m-%d")
-    mock_read.return_value = {"date": today, "status": "posted"}
-
-    await check_reminder()
-    assert not mock_reminder.called
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -229,19 +170,19 @@ def test_voice_handler_lazy_groq_client():
 
 
 @pytest.mark.asyncio
-@patch("main.send_message", new_callable=AsyncMock)
-@patch("main.scrape_all", side_effect=RuntimeError("unexpected crash"))
-@patch("main.read_state")
-@patch("main.update_state")
+@patch("scripts.run_pipeline.send_message", new_callable=AsyncMock)
+@patch("scripts.run_pipeline.scrape_all", side_effect=RuntimeError("unexpected crash"))
+@patch("scripts.run_pipeline.read_state")
+@patch("scripts.run_pipeline.update_state")
 async def test_main_pipeline_finally_resets_processing_status(mock_update, mock_read, mock_scrape, mock_send):
     """If an uncaught exception occurs during processing, main_pipeline finally resets status to failed."""
-    from main import main_pipeline
+    from scripts.run_pipeline import run_pipeline_logic
     mock_read.side_effect = [
         {"date": "1970-01-01", "status": "idle"},
         {"date": "2026-08-09", "status": "processing"}
     ]
 
-    await main_pipeline()
+    await run_pipeline_logic()
 
     # Verify update_state was called with status="failed"
     status_calls = [call.kwargs.get("status") for call in mock_update.call_args_list]

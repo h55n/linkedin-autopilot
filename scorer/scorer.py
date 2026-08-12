@@ -243,7 +243,7 @@ def _mix_pass(scored: list[dict]) -> list[dict]:
     # Slot 4 & 5: Tech News / Tools
     news_count = 0
     for s in scored:
-        if s["id"] not in picked_ids:
+        if s["id"] not in picked_ids and not _is_hackathon_story(s) and not _is_fellowship_story(s):
             top5.append(s)
             picked_ids.add(s["id"])
             news_count += 1

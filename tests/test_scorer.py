@@ -122,13 +122,13 @@ def test_diversity_pass_has_three_slots():
     assert "news1" in ids, "News/Fellowship slot should be present"
 
 
-def test_rank_and_pick_returns_at_most_3():
+def test_rank_and_pick_returns_at_most_5():
     stories = [
         make_story(id=f"s{i}", url=f"https://s{i}.com", title=f"story {i}", score=100 + i * 10)
         for i in range(10)
     ]
     picks = rank_and_pick(stories)
-    assert len(picks) <= 3
+    assert len(picks) <= 5
 
 
 def test_rank_and_pick_handles_empty_input():
