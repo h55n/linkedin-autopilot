@@ -21,9 +21,9 @@ def deduplicate(stories: list[dict], past_urls: set[str] | list[str] | None = No
     """
     if past_urls is None:
         state = read_state()
-        past_urls_set = set(state.get("past_urls", []))
+        past_urls_set = {canonical_url(url) for url in state.get("past_urls", [])}
     else:
-        past_urls_set = set(past_urls)
+        past_urls_set = {canonical_url(url) for url in past_urls}
 
     
     seen_urls: set[str] = set()

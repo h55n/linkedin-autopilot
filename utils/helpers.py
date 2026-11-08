@@ -16,7 +16,7 @@ import re
 import tempfile
 import time
 from datetime import datetime
-from urllib.parse import urlparse, urlunparse
+from urllib.parse import unquote_plus, urlparse, urlunparse
 
 import pytz
 import requests
@@ -81,10 +81,22 @@ def atomic_write_json(filepath: str, data: dict | list, indent: int = 2, ensure_
 # ── URL helpers ───────────────────────────────────────────────────
 
 def canonical_url(url: str) -> str:
-    """Strip query params and fragment for dedup comparison."""
+    """Remove tracking and fragments without erasing query-based story identity.
+
+    Keep the original encoding and order of meaningful parameters. In particular,
+    item?id=123 and item?id=456 must remain different stories.
+    """
     try:
         parsed = urlparse(url)
-        return urlunparse((parsed.scheme, parsed.netloc, parsed.path, "", "", ""))
+        tracking_keys = {"utm", "ref", "ref_src", "fbclid", "gclid", "dclid", "msclkid"}
+        query_parts = []
+        for part in parsed.query.split("&"):
+            key = unquote_plus(part.split("=", 1)[0]).lower()
+            if key in tracking_keys or key.startswith("utm_"):
+                continue
+            if part:
+                query_parts.append(part)
+        return urlunparse((parsed.scheme, parsed.netloc, parsed.path, parsed.params, "&".join(query_parts), ""))
     except Exception:
         return url
 
